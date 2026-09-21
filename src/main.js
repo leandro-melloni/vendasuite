@@ -5,6 +5,7 @@ import {
   salvarMostruario, excluirMostruario,
   buscarVendedoraPorCodigo, listarVendedoras, salvarVendedora, excluirVendedora,
   listarProdutos, buscarProdutoPorCodigo, buscarProdutosPorPrefixo, salvarProduto, excluirProduto, carregarValoresMetais, salvarValoresMetais, recalcularPrecosProdutos, salvarAcerto, listarAcertos, editarAcerto, excluirAcerto
+  , definirTenantAtual
 } from './services/api.js';
 
 const $ = (id) => document.getElementById(id);
@@ -25,6 +26,7 @@ let itensPorPaginaProdutos = 10;
 let abaAtivaMostruario = 'disponivel'; // 'disponivel' | 'alocado'
 let sessaoAtual = null;
 let perfilAtual = null;
+let tenantAtual = null;
 const parametrosIniciais = new URLSearchParams(location.search);
 const acessoPorConvite = /(?:[?#&])type=invite(?:&|$)/.test(location.href) || parametrosIniciais.has('code');
 
@@ -138,6 +140,7 @@ function aplicarPerfil(){
   document.body.dataset.perfil = perfil;
   $('usuarioAtualEmail').textContent = sessaoAtual?.user?.email || '—';
   $('usuarioAtualPerfil').textContent = nomesPerfis[perfil] || perfil;
+  if($('usuarioAtualTenant')) $('usuarioAtualTenant').textContent = tenantAtual?.nome || tenantAtual?.slug || '—';
   $('adminUsuarios').hidden = perfil !== 'administracao';
   document.querySelector('[data-target="configuracoes"]')?.classList.toggle('admin-only-hidden', perfil !== 'administracao');
   document.querySelector('[data-target="acerto"]')?.classList.toggle('admin-only-hidden', perfil !== 'administracao');
@@ -145,13 +148,27 @@ function aplicarPerfil(){
 
 async function abrirAplicacao(session){
   sessaoAtual = session;
-  const { data, error } = await supabase.from('perfis').select('perfil').eq('id', session.user.id).single();
+  const { data, error } = await supabase.from('perfis').select('perfil,tenant_id').eq('id', session.user.id).single();
   if(error || !data){
     await supabase.auth.signOut();
     mostrarLogin('Seu usuário ainda não possui um perfil de acesso. Fale com o administrador.');
     return;
   }
+  if(!data.tenant_id){
+    await supabase.auth.signOut();
+    mostrarLogin('Seu usuário ainda não está vinculado a um tenant. Fale com o administrador.');
+    return;
+  }
+  const { data: tenant, error: tenantError } = await supabase.from('tenants').select('*').eq('id', data.tenant_id).single();
+  if(tenantError || !tenant){
+    await supabase.auth.signOut();
+    mostrarLogin('O tenant vinculado ao seu usuário não foi encontrado ou está inativo.');
+    return;
+  }
   perfilAtual = data.perfil;
+  tenantAtual = tenant;
+  definirTenantAtual(tenant.id);
+  document.body.dataset.tenant = tenant.slug || '';
   aplicarPerfil();
   $('authGate').classList.add('hidden');
   $('appShell').classList.remove('auth-pending');
@@ -162,7 +179,7 @@ async function carregarUsuarios(){
   if(perfilAtual !== 'administracao') return;
   const tbody = $('usuariosTabelaBody');
   tbody.innerHTML = '<tr><td colspan="4">Carregando...</td></tr>';
-  const { data, error } = await supabase.from('perfis').select('id,email,perfil,created_at').order('email');
+  const { data, error } = await supabase.from('perfis').select('id,email,perfil,created_at').eq('tenant_id', tenantAtual.id).order('email');
   if(error){ tbody.innerHTML = '<tr><td colspan="4">Não foi possível carregar os usuários. Atualize a página e tente novamente.</td></tr>'; return; }
   tbody.innerHTML = data.map(usuario => `<tr><td>${html(usuario.email)}</td><td><select class="field-select" data-perfil-usuario="${usuario.id}" ${usuario.id === sessaoAtual.user.id ? 'disabled title="Seu próprio perfil não pode ser alterado aqui"' : ''}>${Object.entries(nomesPerfis).map(([valor,nome]) => `<option value="${valor}" ${usuario.perfil===valor?'selected':''}>${nome}</option>`).join('')}</select></td><td>${new Date(usuario.created_at).toLocaleDateString('pt-BR')}</td><td>${usuario.id === sessaoAtual.user.id ? '<span class="current-user-label">Usuário atual</span>' : `<button type="button" class="mini-btn danger" data-excluir-usuario="${usuario.id}" data-email-usuario="${html(usuario.email)}">Excluir</button>`}</td></tr>`).join('');
 }
@@ -176,7 +193,7 @@ async function iniciarAutenticacao(){
   } else if(session) await abrirAplicacao(session); else mostrarLogin();
   supabase.auth.onAuthStateChange((evento, novaSessao) => {
     if(evento === 'SIGNED_OUT'){
-      sessaoAtual = null; perfilAtual = null; mostrarLogin();
+      sessaoAtual = null; perfilAtual = null; tenantAtual = null; definirTenantAtual(null); mostrarLogin();
     }
     if(evento === 'SIGNED_IN' && novaSessao &&
       (acessoPorConvite || novaSessao.user.user_metadata?.senha_pendente === true)){
@@ -704,14 +721,14 @@ function bind(){
   $('conviteForm')?.addEventListener('submit', async e => {
     e.preventDefault();
     const mensagem=$('conviteMensagem'); mensagem.classList.remove('success'); mensagem.textContent='Enviando convite...';
-    const { data, error } = await supabase.functions.invoke('admin-users', { body:{ action:'invite', email:only($('conviteEmail').value) } });
+    const { data, error } = await supabase.functions.invoke('admin-users', { body:{ action:'invite', email:only($('conviteEmail').value), tenantId:tenantAtual.id } });
     if(error || data?.error){ mensagem.textContent=await mensagemErroFuncao(error, data, 'convite'); return; }
     mensagem.classList.add('success'); mensagem.textContent='Convite enviado. O novo usuário recebeu o perfil de Leitura.'; $('conviteEmail').value='';
     setTimeout(carregarUsuarios, 800);
   });
   $('usuariosTabelaBody')?.addEventListener('change', async e => {
     const id=e.target.dataset.perfilUsuario; if(!id)return;
-    const { error }=await supabase.from('perfis').update({ perfil:e.target.value, updated_at:new Date().toISOString() }).eq('id',id);
+    const { error }=await supabase.from('perfis').update({ perfil:e.target.value, updated_at:new Date().toISOString() }).eq('tenant_id',tenantAtual.id).eq('id',id);
     if(error){ alert('Não foi possível alterar o perfil. Atualize a página e tente novamente.'); await carregarUsuarios(); }
   });
   $('usuariosTabelaBody')?.addEventListener('click', async e => {

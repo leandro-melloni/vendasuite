@@ -44,24 +44,37 @@ Deno.serve(async (req) => {
     if (userError || !user) return json({ error: 'Sessão inválida.' }, 401);
 
     const admin = createClient(url, serviceKey);
-    const { data: profile } = await admin.from('perfis').select('perfil').eq('id', user.id).single();
+    const { data: profile } = await admin.from('perfis').select('perfil,tenant_id').eq('id', user.id).single();
     if (profile?.perfil !== 'administracao') return json({ error: 'Apenas administradores podem gerenciar usuários.' }, 403);
+    if (!profile.tenant_id) return json({ error: 'O administrador não está vinculado a um tenant.' }, 403);
 
     const body = await req.json();
+    const tenantId = String(body.tenantId || profile.tenant_id);
+    if (tenantId !== profile.tenant_id) return json({ error: 'Você não pode gerenciar usuários de outro tenant.' }, 403);
     if (body.action === 'invite') {
       const email = String(body.email || '').trim().toLowerCase();
       if (!email) return json({ error: 'Informe o e-mail que receberá o convite.', code: 'email_nao_informado' });
       const redirectTo = body.redirectTo ? String(body.redirectTo) : undefined;
       let result = await admin.auth.admin.inviteUserByEmail(email, {
         redirectTo,
-        data: { senha_pendente: true }
+        data: { senha_pendente: true, tenant_id: tenantId }
       });
       if (result.error && redirectTo && /redirect|url/i.test(result.error.message)) {
-        result = await admin.auth.admin.inviteUserByEmail(email, { data: { senha_pendente: true } });
+        result = await admin.auth.admin.inviteUserByEmail(email, { data: { senha_pendente: true, tenant_id: tenantId } });
       }
       if (result.error) {
         console.error('Falha ao convidar usuário', { status: result.error.status, code: result.error.code, message: result.error.message });
         return json(friendlyAuthError(result.error));
+      }
+      if (result.data.user) {
+        const { error: profileError } = await admin.from('perfis').upsert({
+          id: result.data.user.id,
+          email,
+          perfil: 'leitura',
+          tenant_id: tenantId,
+          updated_at: new Date().toISOString()
+        });
+        if (profileError) throw profileError;
       }
       return json({ success: true, user: result.data.user });
     }
@@ -70,6 +83,10 @@ Deno.serve(async (req) => {
       const userId = String(body.userId || '');
       if (!userId) return json({ error: 'Selecione um usuário para excluir.', code: 'usuario_nao_informado' });
       if (userId === user.id) return json({ error: 'Você não pode excluir o usuário que está conectado.', code: 'proprio_usuario' });
+      const { data: targetProfile } = await admin.from('perfis').select('tenant_id').eq('id', userId).single();
+      if (!targetProfile || targetProfile.tenant_id !== tenantId) {
+        return json({ error: 'Você não pode excluir um usuário de outro tenant.', code: 'tenant_invalido' }, 403);
+      }
       const { error } = await admin.auth.admin.deleteUser(userId);
       if (error) throw error;
       return json({ success: true });
