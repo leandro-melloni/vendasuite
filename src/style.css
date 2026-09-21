@@ -51,11 +51,12 @@ html,body{
 .leftbar .icon-btn{ width:64px; height:64px; }
 .rail{ background:var(--rail); position:relative; z-index:40; overflow:visible; }
 .menu-slot{ position:absolute; left:0; width:96px; height:84px; display:flex; align-items:center; justify-content:flex-start; z-index:45; overflow:visible; transition:background-color .22s ease, box-shadow .22s ease; cursor:pointer; }
-.menu-slot.ring{top:278px;} .menu-slot.seller{top:362px;} .menu-slot.report{top:446px;} .menu-slot.box{top:530px;}
+.menu-slot.ring{top:278px;} .menu-slot.seller{top:362px;} .menu-slot.report{top:446px;} .menu-slot.box{top:530px;} .menu-slot.tenants{top:614px;}
 .menu-slot.ring:hover{ background:rgba(125,167,234,.80); box-shadow:var(--shadow); }
 .menu-slot.seller:hover{ background:rgba(126,212,233,.85); box-shadow:var(--shadow); }
 .menu-slot.report:hover{ background:rgba(243,220,155,.92); box-shadow:var(--shadow); }
 .menu-slot.box:hover{ background:rgba(228,145,193,.90); box-shadow:var(--shadow); }
+.menu-slot.tenants:hover{ background:rgba(124,108,224,.88); box-shadow:var(--shadow); }
 .icon-btn{ border:none; background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; flex-shrink:0; }
 .rail .icon-btn{ width:96px; height:84px; position:relative; z-index:3; pointer-events:none; }
 .icon-img{ width:54px; height:54px; max-width:54px; max-height:54px; object-fit:contain; object-position:center; display:block; }
@@ -65,6 +66,7 @@ html,body{
 .menu-slot.seller:hover .slide-label{ opacity:1; transform:translateX(0); background:rgba(126,212,233,.85); }
 .menu-slot.report:hover .slide-label{ opacity:1; transform:translateX(0); background:rgba(243,220,155,.92); }
 .menu-slot.box:hover .slide-label{ opacity:1; transform:translateX(0); background:rgba(228,145,193,.90); }
+.menu-slot.tenants:hover .slide-label{ opacity:1; transform:translateX(0); background:rgba(124,108,224,.88); }
 .content{ position:relative; overflow:auto; padding:24px 28px; z-index:1; }
 .watermark{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; opacity:.18; pointer-events:none; }
 .watermark img{ width:500px; max-width:82%; height:auto; object-fit:contain; }

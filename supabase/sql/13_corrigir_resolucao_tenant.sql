@@ -28,6 +28,23 @@ as $$
    where id = auth.uid()
 $$;
 
+create or replace function public.eh_superadmin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+      from public.perfis p
+      join public.tenants t on t.id = p.tenant_id
+     where p.id = auth.uid()
+       and p.perfil = 'administracao'
+       and lower(t.slug) = 'vendasuite'
+  )
+$$;
+
 create or replace function public.criar_perfil_novo_usuario()
 returns trigger
 language plpgsql
@@ -87,7 +104,13 @@ alter table public.tenants enable row level security;
 drop policy if exists "usuario consulta tenant atual" on public.tenants;
 create policy "usuario consulta tenant atual"
 on public.tenants for select to authenticated
-using (id = public.tenant_atual_id());
+using (id = public.tenant_atual_id() or public.eh_superadmin());
+
+drop policy if exists "superadmin gerencia tenants" on public.tenants;
+create policy "superadmin gerencia tenants"
+on public.tenants for all to authenticated
+using (public.eh_superadmin())
+with check (public.eh_superadmin());
 
 -- Recria as políticas operacionais com isolamento explícito por tenant.
 drop policy if exists "dev_all_vendedoras" on public.vendedoras;

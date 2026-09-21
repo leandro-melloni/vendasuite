@@ -86,15 +86,18 @@ function setStatus(){ const el = $('supabaseStatus'); if(el) el.textContent = su
 function showScreen(targetId){
   if(!sessaoAtual) return;
   if(targetId === 'acerto' && perfilAtual !== 'administracao') return;
+  if(targetId === 'tenants-admin' && !ehSuperadmin()) return;
   $$('.screen').forEach(s => s.classList.toggle('active', s.id === targetId));
   if(targetId === 'mostruario') carregarMostruarios();
   if(targetId === 'vendedoras') carregarVendedoras();
   if(targetId === 'estoque') { carregarProdutos(); carregarConfiguracaoMetais(); }
   if(targetId === 'acerto') carregarAcertoBase();
   if(targetId === 'configuracoes' && perfilAtual === 'administracao') carregarUsuarios();
+  if(targetId === 'tenants-admin') carregarTenants();
 }
 
 const nomesPerfis = { administracao:'Administração', escrita:'Escrita', leitura:'Leitura' };
+function ehSuperadmin(){ return perfilAtual === 'administracao' && tenantAtual?.slug?.toLowerCase() === 'vendasuite'; }
 
 function mensagemAutenticacao(error, contexto='operacao'){
   const texto=String(error?.message || error || '').toLowerCase();
@@ -144,6 +147,7 @@ function aplicarPerfil(){
   $('adminUsuarios').hidden = perfil !== 'administracao';
   document.querySelector('[data-target="configuracoes"]')?.classList.toggle('admin-only-hidden', perfil !== 'administracao');
   document.querySelector('[data-target="acerto"]')?.classList.toggle('admin-only-hidden', perfil !== 'administracao');
+  $('menuTenantsAdmin')?.classList.toggle('admin-only-hidden', !ehSuperadmin());
 }
 
 async function abrirAplicacao(session){
@@ -182,6 +186,24 @@ async function carregarUsuarios(){
   const { data, error } = await supabase.from('perfis').select('id,email,perfil,created_at').eq('tenant_id', tenantAtual.id).order('email');
   if(error){ tbody.innerHTML = '<tr><td colspan="4">Não foi possível carregar os usuários. Atualize a página e tente novamente.</td></tr>'; return; }
   tbody.innerHTML = data.map(usuario => `<tr><td>${html(usuario.email)}</td><td><select class="field-select" data-perfil-usuario="${usuario.id}" ${usuario.id === sessaoAtual.user.id ? 'disabled title="Seu próprio perfil não pode ser alterado aqui"' : ''}>${Object.entries(nomesPerfis).map(([valor,nome]) => `<option value="${valor}" ${usuario.perfil===valor?'selected':''}>${nome}</option>`).join('')}</select></td><td>${new Date(usuario.created_at).toLocaleDateString('pt-BR')}</td><td>${usuario.id === sessaoAtual.user.id ? '<span class="current-user-label">Usuário atual</span>' : `<button type="button" class="mini-btn danger" data-excluir-usuario="${usuario.id}" data-email-usuario="${html(usuario.email)}">Excluir</button>`}</td></tr>`).join('');
+}
+
+function limparTenantForm(){
+  $('tenantId').value=''; $('tenantNome').value=''; $('tenantSlug').value='';
+  $('btnCancelarTenant').hidden=true; $('tenantMensagem').textContent='';
+}
+
+async function carregarTenants(){
+  if(!ehSuperadmin()) return;
+  const tbody=$('tenantsTabelaBody');
+  tbody.innerHTML='<tr><td colspan="5">Carregando...</td></tr>';
+  const { data, error }=await supabase.from('tenants').select('*').order('nome');
+  if(error){ tbody.innerHTML=`<tr><td colspan="5">Erro ao carregar tenants: ${html(error.message)}</td></tr>`; return; }
+  tbody.innerHTML=(data||[]).map(t=>{
+    const possuiAtivo=Object.prototype.hasOwnProperty.call(t,'ativo');
+    const ativo=!possuiAtivo || t.ativo !== false;
+    return `<tr><td>${html(t.nome||t.slug)}</td><td>${html(t.slug)}</td><td>${ativo?'Ativo':'Inativo'}</td><td>${t.created_at?new Date(t.created_at).toLocaleDateString('pt-BR'):'—'}</td><td><button class="mini-btn" data-editar-tenant="${t.id}" data-tenant-nome="${html(t.nome||'')}" data-tenant-slug="${html(t.slug||'')}">Editar</button>${possuiAtivo?` <button class="mini-btn ${ativo?'danger':''}" data-status-tenant="${t.id}" data-tenant-ativo="${ativo}">${ativo?'Desativar':'Ativar'}</button>`:''}</td></tr>`;
+  }).join('') || '<tr><td colspan="5">Nenhum tenant cadastrado.</td></tr>';
 }
 
 async function iniciarAutenticacao(){
@@ -697,6 +719,28 @@ async function salvarAcertoAtual(){try{if(!mostruarioAtual||!acertoItens.length)
 function imprimirAcerto(){if(!mostruarioAtual)return alert('Selecione um mostruário.');const total=acertoItens.reduce((s,i)=>s+i.valor,0),pct=Number($('acertoComissao').value),vend=mostruarioAtual.vendedoras||{},pagamentos=lerPagamentosAcerto(),w=window.open('','_blank','width=850,height=700');if(!w)return alert('Permita pop-ups para imprimir.');w.document.write(`<html lang="pt-BR"><meta charset="UTF-8"><title>Relatório de Acerto</title><style>body{font:14px Arial;padding:28px}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #bbb;padding:8px;text-align:left}th{background:#eee}</style><h1>Relatório de Acerto</h1><p>Vendedora: ${html(vend.codigo)} — ${html(vend.nome)} | Mostruário ${html(mostruarioAtual.numero)} | ${hoje()}</p><table><tr><th>Código</th><th>Descrição</th><th>Retirada</th><th>Devolvida</th><th>Vendida</th><th>Preço unit.</th><th>Valor</th></tr>${acertoItens.map(i=>`<tr><td>${html(i.codigo)}</td><td>${html(i.descricao)}</td><td>${i.retirada}</td><td>${i.devolvida}</td><td>${i.vendida}</td><td>${money(i.preco)}</td><td>${money(i.valor)}</td></tr>`).join('')}</table><p>Peças: ${acertoItens.reduce((s,i)=>s+i.vendida,0)}<br>Valor total: ${money(total)}<br>Comissão (${pct}%): ${money(total*pct/100)}<br>Valor a receber: ${money(total*(1-pct/100))}<br><strong>Formas de pagamento:</strong><br>${pagamentosParaImpressao(pagamentos)}</p></html>`);w.document.close();setTimeout(()=>{w.focus();w.print()},300);}
 
 function bind(){
+  $('tenantForm')?.addEventListener('submit',async e=>{
+    e.preventDefault(); if(!ehSuperadmin()) return;
+    const id=only($('tenantId').value), nome=only($('tenantNome').value);
+    const slug=only($('tenantSlug').value).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+    const mensagem=$('tenantMensagem'); mensagem.textContent='Salvando...';
+    if(!nome||!slug){ mensagem.textContent='Informe o nome e o identificador do tenant.'; return; }
+    const query=id?supabase.from('tenants').update({nome,slug}).eq('id',id):supabase.from('tenants').insert({nome,slug});
+    const { error }=await query;
+    if(error){ mensagem.textContent=`Não foi possível salvar: ${error.message}`; return; }
+    limparTenantForm(); await carregarTenants();
+  });
+  $('btnCancelarTenant')?.addEventListener('click',limparTenantForm);
+  $('tenantsTabelaBody')?.addEventListener('click',async e=>{
+    const editar=e.target.closest('[data-editar-tenant]');
+    if(editar){ $('tenantId').value=editar.dataset.editarTenant; $('tenantNome').value=editar.dataset.tenantNome; $('tenantSlug').value=editar.dataset.tenantSlug; $('btnCancelarTenant').hidden=false; $('tenantNome').focus(); return; }
+    const status=e.target.closest('[data-status-tenant]');
+    if(!status) return;
+    const ativo=status.dataset.tenantAtivo==='true';
+    if(ativo && status.dataset.statusTenant===tenantAtual.id){ alert('O tenant principal VendaSuite não pode ser desativado.'); return; }
+    const { error }=await supabase.from('tenants').update({ativo:!ativo}).eq('id',status.dataset.statusTenant);
+    if(error) alert(`Não foi possível alterar o status: ${error.message}`); else await carregarTenants();
+  });
   $('primeiroAcessoForm')?.addEventListener('submit', async e => {
     e.preventDefault();
     const senha=$('novaSenha').value, mensagem=$('primeiroAcessoMensagem');

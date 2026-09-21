@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WN Bijouterias</title>
-  <script type="module" crossorigin src="./assets/index-BezOjhOG.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-6yyR_q0O.css">
+  <script type="module" crossorigin src="./assets/index-D0BxkVzJ.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-B2YrTMBl.css">
 </head>
 <body>
   <section id="authGate" class="auth-gate">
@@ -43,6 +43,7 @@
       <div class="menu-slot seller nav-btn" data-target="vendedoras" title="Vendedoras"><button class="icon-btn" type="button" tabindex="-1"><img src="assets/icone_vendedora.svg" alt="Vendedoras" class="icon-img" /></button><div class="slide-label">VENDEDORAS</div></div>
       <div class="menu-slot report nav-btn" data-target="acerto" title="Acerto"><button class="icon-btn" type="button" tabindex="-1"><img src="assets/icone_acerto.svg" alt="Acerto" class="icon-img" /></button><div class="slide-label">ACERTO</div></div>
       <div class="menu-slot box nav-btn" data-target="estoque" title="Cadastro Produto"><button class="icon-btn" type="button" tabindex="-1"><img src="assets/icone_cadastro_produto.svg" alt="Cadastro Produto" class="icon-img" /></button><div class="slide-label">CADASTRO PRODUTO</div></div>
+      <div id="menuTenantsAdmin" class="menu-slot tenants nav-btn admin-only-hidden" data-target="tenants-admin" title="Administrar tenants"><button class="icon-btn" type="button" tabindex="-1"><img src="assets/icone_configuracoes.svg" alt="Administrar tenants" class="icon-img" /></button><div class="slide-label">TENANTS</div></div>
     </div>
 
     <main class="content">
@@ -122,6 +123,21 @@
           <div class="acerto-resumo"><div class="resumo-card"><span>Total Vendido (peças)</span><strong id="acertoTotalPecas">0</strong></div><div class="resumo-card"><span>Valor Total da Venda</span><strong id="acertoTotalValor">R$ 0,00</strong></div><div class="resumo-card"><span>Comissão (%)</span><input type="number" id="acertoComissao" min="0" max="100" value="50"></div><div class="resumo-card"><span>Valor a Receber</span><strong id="acertoValorReceber">R$ 0,00</strong></div><div class="field"><label>Pagamento</label><select id="acertoPagamento" class="field-select"><option>Pix</option><option>Dinheiro</option></select></div></div>
           <div class="include-top"><span></span><div class="top-actions"><button class="btn primary" type="button" id="btnSalvarAcerto">Salvar</button><button class="btn light" type="button" id="btnImprimirAcerto">Imprimir relatório</button></div></div>
         </div></div>
+      </section>
+      <section id="tenants-admin" class="screen">
+        <div class="card">
+          <div class="top-bar top-bar-estoque">ADMINISTRAÇÃO DE TENANTS</div>
+          <p>Área exclusiva do superadmin da plataforma VendaSuite.</p>
+          <form id="tenantForm" class="invite-form">
+            <input id="tenantId" type="hidden">
+            <div class="field"><label for="tenantNome">Nome</label><input id="tenantNome" type="text" placeholder="Nome da empresa" required></div>
+            <div class="field"><label for="tenantSlug">Identificador</label><input id="tenantSlug" type="text" placeholder="empresa-exemplo" required></div>
+            <button class="btn primary" type="submit">Salvar tenant</button>
+            <button class="btn light" id="btnCancelarTenant" type="button" hidden>Cancelar</button>
+          </form>
+          <div id="tenantMensagem" class="auth-message" role="status"></div>
+          <div class="table-wrap"><table class="data-table"><thead><tr><th>Nome</th><th>Identificador</th><th>Status</th><th>Cadastro</th><th>Ações</th></tr></thead><tbody id="tenantsTabelaBody"></tbody></table></div>
+        </div>
       </section>
       <section id="configuracoes" class="screen"><div class="card"><h2>USUÁRIOS E ACESSOS</h2><p id="supabaseStatus"></p><p>Usuário atual: <strong id="usuarioAtualEmail">—</strong> · Tenant: <strong id="usuarioAtualTenant">—</strong> · Perfil: <strong id="usuarioAtualPerfil">—</strong></p><div id="adminUsuarios" hidden><form id="conviteForm" class="invite-form"><div class="field"><label for="conviteEmail">Convidar novo usuário</label><input id="conviteEmail" type="email" placeholder="usuario@exemplo.com" required></div><button class="btn primary" type="submit">Enviar convite</button></form><div id="conviteMensagem" class="auth-message" role="status"></div><div class="table-wrap"><table class="data-table"><thead><tr><th>E-mail</th><th>Perfil</th><th>Cadastro</th><th>Ações</th></tr></thead><tbody id="usuariosTabelaBody"></tbody></table></div></div></div></section>
     </main>
