@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WN Bijouterias</title>
-  <script type="module" crossorigin src="./assets/index-Bhyq65_F.js"></script>
+  <title>VendaSuite</title>
+  <script type="module" crossorigin src="./assets/index-t1MXz1Jh.js"></script>
   <link rel="stylesheet" crossorigin href="./assets/index-B2YrTMBl.css">
 </head>
 <body>
   <section id="authGate" class="auth-gate">
     <form id="loginForm" class="login-card">
-      <img src="assets/logo_venda_suite.svg" alt="WN Bijouterias" class="login-logo">
+      <img src="assets/logo_venda_suite.svg" alt="VendaSuite" class="login-logo" data-tenant-alt>
       <h1>Bem-vindo</h1>
       <p>Entre com seu e-mail e senha para acessar o sistema.</p>
       <div class="field"><label for="loginEmail">E-mail</label><input id="loginEmail" type="email" autocomplete="email" required></div>
@@ -19,7 +19,7 @@
       <button id="btnEntrar" class="btn primary" type="submit">Entrar</button>
     </form>
     <form id="primeiroAcessoForm" class="login-card" hidden>
-      <img src="assets/logo_venda_suite.svg" alt="WN Bijouterias" class="login-logo">
+      <img src="assets/logo_venda_suite.svg" alt="VendaSuite" class="login-logo" data-tenant-alt>
       <h1>Crie sua senha</h1>
       <p>Finalize seu convite definindo a senha dos próximos acessos.</p>
       <div class="field"><label for="novaSenha">Nova senha</label><input id="novaSenha" type="password" minlength="8" autocomplete="new-password" required></div>
@@ -31,7 +31,7 @@
 
   <div id="appShell" class="app auth-pending">
     <aside class="leftbar">
-      <div class="top-logo nav-btn" data-target="home" title="Ir para início"><img src="assets/logo_venda_suite.svg" alt="WN Bijouterias" class="icon-img" /></div>
+      <div class="top-logo nav-btn" data-target="home" title="Ir para início"><img src="assets/logo_venda_suite.svg" alt="VendaSuite" class="icon-img" data-tenant-alt /></div>
       <div class="bottom-actions">
         <button class="icon-btn" id="btnLogout" title="Sair" type="button"><img src="assets/icone_sair.svg" alt="Sair" class="icon-img" /></button>
         <button class="icon-btn nav-btn" data-target="configuracoes" title="Configurações" type="button"><img src="assets/icone_configuracoes.svg" alt="Configurações" class="icon-img" /></button>
@@ -47,12 +47,12 @@
     </div>
 
     <main class="content">
-      <div class="watermark"><img src="assets/icone_wnbijouterias.svg" alt="WN Bijouterias" /></div>
+      <div class="watermark"><img src="assets/icone_wnbijouterias.svg" alt="VendaSuite" data-tenant-alt /></div>
 
       <section id="home" class="screen active">
         <div class="hero">
           <div class="card">
-            <h1>WN BIJOUTERIAS</h1>
+            <h1 data-tenant-nome>VendaSuite</h1>
             <p>Sistema de gestão de mostruários, vendedoras, produtos e acerto.</p>
             <div class="chips"><div class="chip">Mostruário</div><div class="chip">Vendedoras</div><div class="chip">Cadastro Produto</div><div class="chip">Acerto</div><div class="chip">Configurações</div></div>
             <div class="actions"><button class="btn primary nav-btn" data-target="mostruario" type="button">Abrir Mostruário</button><button class="btn light nav-btn" data-target="vendedoras" type="button">Vendedoras</button></div>

@@ -155,6 +155,13 @@ function aplicarPerfil(){
   $('menuTenantsAdmin')?.classList.toggle('admin-only-hidden', !ehSuperadmin());
 }
 
+function aplicarIdentidadeTenant(){
+  const nome=tenantAtual?.nome || tenantAtual?.slug || 'VendaSuite';
+  document.title=nome;
+  $$('[data-tenant-nome]').forEach(el=>{ el.textContent=nome; });
+  $$('[data-tenant-alt]').forEach(el=>{ el.alt=nome; });
+}
+
 async function abrirAplicacao(session){
   sessaoAtual = session;
   const { data, error } = await supabase.from('perfis').select('perfil,tenant_id').eq('id', session.user.id).single();
@@ -183,6 +190,7 @@ async function abrirAplicacao(session){
   tenantAtual = tenant;
   definirTenantAtual(tenant.id);
   document.body.dataset.tenant = tenant.slug || '';
+  aplicarIdentidadeTenant();
   aplicarPerfil();
   $('authGate').classList.add('hidden');
   $('appShell').classList.remove('auth-pending');
@@ -672,7 +680,7 @@ function imprimirMostruario(){
       </style>
     </head>
     <body>
-      <h1>WN Bijouterias — Mostruário Nº ${html(numero)}</h1>
+      <h1>${html(tenantAtual?.nome || tenantAtual?.slug || 'VendaSuite')} — Mostruário Nº ${html(numero)}</h1>
       <p class="subtitulo">Emitido em: ${hoje()}</p>
       <div class="info-grid"${temVendedora ? '' : ' style="grid-template-columns: 1fr 1fr;"'}>
         <div class="info-item"><label>Nº Mostruário</label><span>${html(numero)}</span></div>
