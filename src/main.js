@@ -1103,4 +1103,3 @@ setStatus();
 bind();
 iniciarAutenticacao();
 showScreen(location.hash?.replace('#','') || 'home');
-carregarConfiguracaoMetais();
