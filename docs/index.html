@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WN Bijouterias</title>
+  <script type="module" crossorigin src="./assets/index-BBw7cA7c.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DvLSZJcW.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="leftbar">
+      <div class="top-logo nav-btn" data-target="home" title="Ir para início"><img src="assets/logo_venda_suite.svg" alt="WN Bijouterias" class="icon-img" /></div>
+      <div class="bottom-actions">
+        <button class="icon-btn nav-btn" data-target="logout" title="Sair" type="button"><img src="assets/icone_sair.svg" alt="Sair" class="icon-img" /></button>
+        <button class="icon-btn nav-btn" data-target="configuracoes" title="Configurações" type="button"><img src="assets/icone_configuracoes.svg" alt="Configurações" class="icon-img" /></button>
+      </div>
+    </aside>
+
+    <div class="rail">
+      <div class="menu-slot ring nav-btn" data-target="mostruario" title="Mostruário"><button class="icon-btn" type="button" tabindex="-1"><img src="assets/icone_anel.svg" alt="Mostruário" class="icon-img" /></button><div class="slide-label">MOSTRUÁRIO</div></div>
+      <div class="menu-slot seller nav-btn" data-target="vendedoras" title="Vendedoras"><button class="icon-btn" type="button" tabindex="-1"><img src="assets/icone_vendedora.svg" alt="Vendedoras" class="icon-img" /></button><div class="slide-label">VENDEDORAS</div></div>
+      <div class="menu-slot report nav-btn" data-target="acerto" title="Acerto"><button class="icon-btn" type="button" tabindex="-1"><img src="assets/icone_acerto.svg" alt="Acerto" class="icon-img" /></button><div class="slide-label">ACERTO</div></div>
+      <div class="menu-slot box nav-btn" data-target="estoque" title="Cadastro Produto"><button class="icon-btn" type="button" tabindex="-1"><img src="assets/icone_cadastro_produto.svg" alt="Cadastro Produto" class="icon-img" /></button><div class="slide-label">CADASTRO PRODUTO</div></div>
+    </div>
+
+    <main class="content">
+      <div class="watermark"><img src="assets/icone_wnbijouterias.svg" alt="WN Bijouterias" /></div>
+
+      <section id="home" class="screen active">
+        <div class="hero">
+          <div class="card">
+            <h1>WN BIJOUTERIAS</h1>
+            <p>Sistema de gestão de mostruários, vendedoras, produtos e acerto.</p>
+            <div class="chips"><div class="chip">Mostruário</div><div class="chip">Vendedoras</div><div class="chip">Cadastro Produto</div><div class="chip">Acerto</div><div class="chip">Configurações</div></div>
+            <div class="actions"><button class="btn primary nav-btn" data-target="mostruario" type="button">Abrir Mostruário</button><button class="btn light nav-btn" data-target="vendedoras" type="button">Vendedoras</button></div>
+          </div>
+          <div class="card"><h2>Fluxo principal</h2><div class="flow"><div class="flow-item"><strong>1. Cadastro Produto</strong><span>Cadastra código, descrição, tipo e preço.</span></div><div class="flow-item"><strong>2. Vendedoras</strong><span>Cadastra e organiza as vendedoras.</span></div><div class="flow-item"><strong>3. Mostruário</strong><span>Vincula produtos e vendedora.</span></div><div class="flow-item"><strong>4. Acerto</strong><span>Confere devolução e valor vendido por mostruário.</span></div></div></div>
+        </div>
+      </section>
+
+      <section id="mostruario" class="screen">
+        <div class="panel">
+          <div class="top-bar top-bar-mostruario top-bar-lista">MOSTRUÁRIO</div>
+          <div class="toolbar"><div class="toolbar-actions toolbar-actions-main"><div class="search-filter-wrap"><select id="filtroMostruario" class="search-select"><option value="todos">Todos</option><option value="numero">Nº Mostruário</option><option value="codigoVendedora">Cód. Vendedora</option><option value="vendedora">Vendedora</option><option value="ultimoAcerto">Último Acerto</option><option value="proximoAcerto">Próximo Acerto</option></select><div class="search-box"><img src="assets/icone_lupa.svg" alt="Pesquisar" class="search-icon"><input type="text" id="buscaMostruario" placeholder="Pesquisar ou filtrar" class="search-input"></div><button class="btn light" type="button" id="btnPesquisarMostruario">Pesquisar</button></div><button class="btn blue" type="button" id="btnNovoMostruario">NOVO MOSTRUÁRIO</button></div></div>
+          <div class="table-wrap"><table class="data-table"><thead><tr><th>Mostruário</th><th>Cód. Vendedora</th><th>Vendedora</th><th>Valor Total</th><th>Último Acerto</th><th>Próximo Acerto</th><th>Ações</th></tr></thead><tbody id="mostruarioTabelaBody"><tr><td colspan="7" class="empty-table">Carregando...</td></tr></tbody></table></div>
+        </div>
+      </section>
+
+      <section id="mostruario-incluir" class="screen">
+        <div class="mostruario-page"><div class="top-bar top-bar-mostruario">MOSTRUÁRIO</div><div class="include-wrap"><div class="include-top"><div class="voltar nav-btn" data-target="mostruario">⟵ VOLTAR</div><div class="top-actions"><button class="btn primary" type="button" id="btnSalvarMostruario">Salvar</button><button class="btn light" type="button" id="btnImprimirMostruario">Imprimir</button></div></div>
+          <input type="hidden" id="mostruarioId">
+          <div class="include-grid include-grid-mostruario">
+            <div class="field small"><label>Número Mostruário:</label><input type="text" id="numeroMostruario" placeholder="00" data-auto-next="true" data-next-length="2"></div>
+            <div class="field small"><label>Código da Vendedora:</label><input type="text" id="codigoVendedoraMostruario" placeholder="001" data-auto-next="true" data-next-length="3"></div>
+            <div class="field wide"><label>Nome Vendedora:</label><input type="text" id="nomeVendedoraMostruario" placeholder="Nome completo" readonly></div>
+            <div class="field small"><label>Último Acerto:</label><input type="date" id="dataUltimoAcertoMostruario" data-auto-next="true" data-next-length="10"></div>
+            <div class="field small"><label>Próximo Acerto:</label><input type="date" id="dataProximoAcertoMostruario" data-auto-next="true" data-next-length="10"></div>
+            <div class="field small"><label>Cód. do Produto:</label><input type="text" id="codigoProduto" placeholder="P001" maxlength="4" autocomplete="off" data-uppercase="true" data-auto-next="true" data-next-length="4"></div>
+            <div class="field wide"><label>Descrição do Produto:</label><input type="text" id="descricaoProduto" placeholder="Nome do produto" readonly></div>
+            <div class="field small"><label>Preço:</label><input type="text" id="precoProdutoMostruario" placeholder="0,00" readonly></div>
+            <div class="field qty-field"><label>Qtd.:</label><input type="text" id="qtdProduto" placeholder="00000"><span class="unit-inline">PEÇAS</span></div>
+          </div>
+          <div class="mostruario-total-box"><strong>Total do Mostruário:</strong><span id="totalMostruarioValor">R$ 0,00</span></div>
+          <div class="lista-produtos"><div class="lista-header"><h3>Lista de Produtos:</h3><div class="lista-acoes"><button class="btn blue" type="button" id="btnAdicionarProduto">Adicionar Produto</button></div></div><div id="listaProdutosContainer"><div class="lista-vazia">Nenhum produto adicionado.</div></div></div>
+        </div></div>
+      </section>
+
+      <section id="vendedoras" class="screen">
+        <div class="panel"><div class="top-bar top-bar-vendedora top-bar-lista">VENDEDORAS</div><div class="toolbar"><div class="toolbar-actions toolbar-actions-main"><div class="search-filter-wrap"><select id="filtroVendedora" class="search-select"><option value="todos">Todos</option><option value="codigo">Código</option><option value="nome">Nome</option><option value="ultimo">Último Acerto</option><option value="proximo">Próximo Acerto</option></select><div class="search-box"><img src="assets/icone_lupa.svg" alt="Pesquisar" class="search-icon"><input type="text" id="buscaVendedora" placeholder="Pesquisar ou filtrar" class="search-input"></div><button class="btn light" type="button" id="btnPesquisarVendedora">Pesquisar</button></div><button class="btn blue nav-btn" type="button" data-target="vendedora-cadastro" id="btnNovaVendedora">NOVA VENDEDORA</button></div></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Código</th><th>Nome completo</th><th>Último Acerto</th><th>Próximo Acerto</th><th>Ações</th></tr></thead><tbody id="vendedoraTabelaBody"><tr><td colspan="5" class="empty-table">Carregando...</td></tr></tbody></table></div></div>
+      </section>
+
+      <section id="vendedora-cadastro" class="screen">
+        <div class="vendedora-page"><div class="top-bar top-bar-vendedora">VENDEDORA</div><div class="include-wrap"><div class="include-top"><div class="voltar nav-btn" data-target="vendedoras">⟵ VOLTAR</div><div class="top-actions"><button class="btn primary btn-vendedora" type="button" id="btnSalvarVendedora">Salvar</button></div></div><input type="hidden" id="vendedoraId"><div class="vendedora-grid"><div class="field small"><label>Código da vendedora:</label><input type="text" id="vendedoraCodigo" placeholder="001" autocomplete="off" data-auto-next="true" data-next-length="3"></div><div class="field wide-2"><label>Nome completo:</label><input type="text" id="vendedoraNome" placeholder="Nome completo" autocomplete="off" data-auto-next="true"></div><div class="field small"><label>CPF:</label><input type="text" id="vendedoraCpf" placeholder="000.000.000-00" maxlength="14" autocomplete="off" data-auto-next="true" data-next-length="14"></div><div class="field wide-2"><label>Endereço completo:</label><input type="text" id="vendedoraEndereco" placeholder="Rua, avenida, etc." autocomplete="off" data-auto-next="true"></div><div class="field small"><label>Número:</label><input type="text" id="vendedoraNumero" placeholder="123" autocomplete="off" data-auto-next="true"></div><div class="field small"><label>Complemento:</label><input type="text" id="vendedoraComplemento" placeholder="Apto, casa, bloco" autocomplete="off" data-auto-next="true"></div><div class="field wide"><label>Bairro:</label><input type="text" id="vendedoraBairro" placeholder="Bairro" autocomplete="off" data-auto-next="true"></div><div class="field wide"><label>Celular:</label><input type="text" id="vendedoraCelular" placeholder="(00) 00000-0000" maxlength="15" autocomplete="off" data-auto-next="true" data-next-length="15"></div><div class="field small"><label>Último Acerto:</label><input type="text" id="vendedoraUltimoAcerto" placeholder="--/--/----" readonly></div><div class="field small"><label>Próximo Acerto:</label><input type="text" id="vendedoraProximoAcerto" placeholder="--/--/----" readonly></div></div></div></div>
+      </section>
+
+      <section id="estoque" class="screen">
+        <div class="panel"><div class="top-bar top-bar-estoque top-bar-lista">CADASTRO PRODUTO</div><div class="price-settings"><div class="field small"><label>Valor do Ouro:</label><input type="text" id="valorOuro" placeholder="0,00" data-auto-next="true"></div><div class="field small"><label>Valor da Prata:</label><input type="text" id="valorPrata" placeholder="0,00" data-auto-next="true"></div><div class="price-settings-actions"><button class="btn primary" type="button" id="btnSalvarValoresMetais">Salvar Valores</button></div></div><div class="toolbar"><div class="toolbar-actions toolbar-actions-main"><div class="search-filter-wrap"><select id="filtroProduto" class="search-select"><option value="todos">Todos</option><option value="codigo">Cód. de Produto</option><option value="descricao">Descrição</option><option value="tipo">Tipo</option><option value="preco">Preço</option><option value="dataInclusao">Data de Inclusão/Alteração</option></select><div class="search-box"><img src="assets/icone_lupa.svg" alt="Pesquisar" class="search-icon"><input type="text" id="buscaProduto" placeholder="Pesquisar ou filtrar" class="search-input"></div><button class="btn light" type="button" id="btnPesquisarProduto">Pesquisar</button></div><button class="btn blue nav-btn" type="button" data-target="produto-cadastro" id="btnNovoProduto">NOVO PRODUTO</button></div></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Cód. de Produto</th><th>Descrição</th><th>Tipo</th><th>Preço</th><th>Data de Inclusão/Alteração</th><th>Ações</th></tr></thead><tbody id="produtoTabelaBody"><tr><td colspan="6" class="empty-table">Carregando...</td></tr></tbody></table></div></div>
+      </section>
+
+      <section id="produto-cadastro" class="screen">
+        <div class="produto-page"><div class="top-bar top-bar-estoque">CADASTRO PRODUTO</div><div class="include-wrap"><div class="include-top"><div class="voltar nav-btn" data-target="estoque">⟵ VOLTAR</div><div class="top-actions"><button class="btn primary" type="button" id="btnSalvarProduto">Salvar</button></div></div><input type="hidden" id="produtoId"><div class="produto-grid"><div class="field small"><label>Cód. do Produto:</label><input type="text" id="produtoCodigo" placeholder="P001" maxlength="4" autocomplete="off" data-uppercase="true" data-auto-next="true" data-next-length="4"></div><div class="field wide-2"><label>Descrição:</label><input type="text" id="produtoDescricao" placeholder="Descrição do produto" autocomplete="off" data-auto-next="true"></div><div class="field small"><label>Tipo:</label><select id="produtoTipo" class="field-select" data-auto-next="true"><option value="">Selecione</option><option value="ouro">Ouro</option><option value="prata">Prata</option></select></div><div class="field small"><label>Preço:</label><input type="text" id="produtoPreco" placeholder="0,00" autocomplete="off"></div><div class="field small"><label>Data de inclusão/alteração:</label><input type="text" id="produtoData" placeholder="DD/MM/AAAA" readonly></div></div></div></div>
+      </section>
+
+      <section id="acerto" class="screen">
+        <div class="panel"><div class="top-bar top-bar-acerto">ACERTO</div><div class="include-wrap"><div class="acerto-grid acerto-grid-topo"><div class="field small"><label>Número do Mostruário:</label><input type="text" id="acertoNumeroMostruario" placeholder="001" data-auto-next="true" data-next-length="2"></div><div class="field small"><label>Cód. da Vendedora:</label><input type="text" id="acertoCodigoVendedora" placeholder="001" readonly></div><div class="field wide"><label>Nome da Vendedora:</label><input type="text" id="acertoNomeVendedora" placeholder="Nome completo" readonly></div></div><div class="acerto-grid acerto-grid-baixo"><div class="field small"><label>Cód. do Produto:</label><input type="text" id="acertoCodigoProduto" placeholder="P001" maxlength="4" autocomplete="off" data-uppercase="true" data-auto-next="true" data-next-length="4"></div><div class="field wide"><label>Descrição do Produto:</label><input type="text" id="acertoDescricaoProduto" placeholder="Descrição do produto" readonly></div><div class="field small"><label>Quantidade Retirada:</label><input type="text" id="acertoQtdRetirada" placeholder="0" readonly></div><div class="field small"><label>Quantidade Devolvida:</label><input type="text" id="acertoQtdDevolvida" placeholder="0" data-auto-next="true"></div></div><div class="acerto-lista"><div class="lista-header"><h3>Itens do Acerto:</h3></div><div class="acerto-head"><span>Código</span><span>Descrição</span><span>Retirada</span><span>Devolvida</span><span>Vendida</span><span>Valor</span></div><div id="acertoListaContainer"><div class="lista-vazia">Nenhum item lançado no acerto.</div></div></div><div class="acerto-resumo"><div class="resumo-card"><span>Total Vendido (peças)</span><strong id="acertoTotalPecas">0</strong></div><div class="resumo-card"><span>Valor Total da Venda</span><strong id="acertoTotalValor">R$ 0,00</strong></div></div></div></div>
+      </section>
+
+      <section id="configuracoes" class="screen"><div class="card"><h2>CONFIGURAÇÕES</h2><p>Configure as variáveis do Supabase no arquivo <strong>.env</strong>.</p><p id="supabaseStatus"></p></div></section>
+      <section id="logout" class="screen"><div class="card small-card"><h2>SAIR</h2><p>Você saiu da visualização atual.</p><button class="btn primary nav-btn" data-target="home" type="button">Voltar para início</button></div></section>
+    </main>
+  </div>
+</body>
+</html>
