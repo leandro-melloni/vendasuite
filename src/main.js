@@ -29,6 +29,7 @@ let perfilAtual = null;
 let tenantAtual = null;
 const parametrosIniciais = new URLSearchParams(location.search);
 const acessoPorConvite = /(?:[?#&])type=invite(?:&|$)/.test(location.href) || parametrosIniciais.has('code');
+const tenantSolicitado = only(parametrosIniciais.get('tenant')).toLowerCase();
 
 function only(v){ return (v ?? '').toString().trim(); }
 
@@ -82,6 +83,11 @@ function isoToBr(v){ if(!v) return ''; const [a,m,d] = v.split('-'); return d &&
 function n(v){ return Number(String(v || '0').replace(/\./g,'').replace(',','.')) || 0; }
 function msgConfig(cols, texto){ return `<tr><td colspan="${cols}" class="empty-table">${texto}</td></tr>`; }
 function setStatus(){ const el = $('supabaseStatus'); if(el) el.textContent = supabaseConfigured ? 'Supabase configurado.' : 'Supabase ainda não configurado. Preencha o arquivo .env.'; }
+function linkDoTenant(slug){
+  const url=new URL(location.href);
+  url.search=''; url.hash=''; url.searchParams.set('tenant',slug);
+  return url.toString();
+}
 
 function showScreen(targetId){
   if(!sessaoAtual) return;
@@ -169,6 +175,11 @@ async function abrirAplicacao(session){
     mostrarLogin('O tenant vinculado ao seu usuário não foi encontrado ou está inativo.');
     return;
   }
+  if(tenantSolicitado && tenant.slug?.toLowerCase() !== tenantSolicitado){
+    await supabase.auth.signOut();
+    mostrarLogin(`Este link é exclusivo do tenant ${tenantSolicitado}. Seu usuário pertence a outro tenant.`);
+    return;
+  }
   perfilAtual = data.perfil;
   tenantAtual = tenant;
   definirTenantAtual(tenant.id);
@@ -196,14 +207,15 @@ function limparTenantForm(){
 async function carregarTenants(){
   if(!ehSuperadmin()) return;
   const tbody=$('tenantsTabelaBody');
-  tbody.innerHTML='<tr><td colspan="5">Carregando...</td></tr>';
+  tbody.innerHTML='<tr><td colspan="6">Carregando...</td></tr>';
   const { data, error }=await supabase.from('tenants').select('*').order('nome');
-  if(error){ tbody.innerHTML=`<tr><td colspan="5">Erro ao carregar tenants: ${html(error.message)}</td></tr>`; return; }
+  if(error){ tbody.innerHTML=`<tr><td colspan="6">Erro ao carregar tenants: ${html(error.message)}</td></tr>`; return; }
   tbody.innerHTML=(data||[]).map(t=>{
     const possuiAtivo=Object.prototype.hasOwnProperty.call(t,'ativo');
     const ativo=!possuiAtivo || t.ativo !== false;
-    return `<tr><td>${html(t.nome||t.slug)}</td><td>${html(t.slug)}</td><td>${ativo?'Ativo':'Inativo'}</td><td>${t.created_at?new Date(t.created_at).toLocaleDateString('pt-BR'):'—'}</td><td><button class="mini-btn" data-editar-tenant="${t.id}" data-tenant-nome="${html(t.nome||'')}" data-tenant-slug="${html(t.slug||'')}">Editar</button>${possuiAtivo?` <button class="mini-btn ${ativo?'danger':''}" data-status-tenant="${t.id}" data-tenant-ativo="${ativo}">${ativo?'Desativar':'Ativar'}</button>`:''}</td></tr>`;
-  }).join('') || '<tr><td colspan="5">Nenhum tenant cadastrado.</td></tr>';
+    const link=linkDoTenant(t.slug);
+    return `<tr><td>${html(t.nome||t.slug)}</td><td>${html(t.slug)}</td><td><button class="mini-btn" data-copiar-link-tenant="${html(link)}">Copiar link</button> <a class="mini-btn" href="${html(link)}" target="_blank" rel="noopener">Abrir</a></td><td>${ativo?'Ativo':'Inativo'}</td><td>${t.created_at?new Date(t.created_at).toLocaleDateString('pt-BR'):'—'}</td><td><button class="mini-btn" data-editar-tenant="${t.id}" data-tenant-nome="${html(t.nome||'')}" data-tenant-slug="${html(t.slug||'')}">Editar</button>${possuiAtivo?` <button class="mini-btn ${ativo?'danger':''}" data-status-tenant="${t.id}" data-tenant-ativo="${ativo}">${ativo?'Desativar':'Ativar'}</button>`:''}</td></tr>`;
+  }).join('') || '<tr><td colspan="6">Nenhum tenant cadastrado.</td></tr>';
 }
 
 async function iniciarAutenticacao(){
@@ -732,6 +744,12 @@ function bind(){
   });
   $('btnCancelarTenant')?.addEventListener('click',limparTenantForm);
   $('tenantsTabelaBody')?.addEventListener('click',async e=>{
+    const copiar=e.target.closest('[data-copiar-link-tenant]');
+    if(copiar){
+      try{ await navigator.clipboard.writeText(copiar.dataset.copiarLinkTenant); copiar.textContent='Copiado!'; setTimeout(()=>copiar.textContent='Copiar link',1500); }
+      catch(_erro){ window.prompt('Copie o link do tenant:',copiar.dataset.copiarLinkTenant); }
+      return;
+    }
     const editar=e.target.closest('[data-editar-tenant]');
     if(editar){ $('tenantId').value=editar.dataset.editarTenant; $('tenantNome').value=editar.dataset.tenantNome; $('tenantSlug').value=editar.dataset.tenantSlug; $('btnCancelarTenant').hidden=false; $('tenantNome').focus(); return; }
     const status=e.target.closest('[data-status-tenant]');
@@ -747,7 +765,7 @@ function bind(){
     if(senha !== $('confirmarSenha').value){ mensagem.textContent='As senhas não coincidem.'; return; }
     const { error }=await supabase.auth.updateUser({ password:senha, data:{ senha_pendente:false } });
     if(error){ mensagem.textContent=mensagemAutenticacao(error); return; }
-    history.replaceState({}, document.title, location.pathname);
+    history.replaceState({}, document.title, tenantSolicitado ? `${location.pathname}?tenant=${encodeURIComponent(tenantSolicitado)}` : location.pathname);
     $('primeiroAcessoForm').hidden=true; $('loginForm').hidden=false;
     const { data:{session} }=await supabase.auth.getSession();
     await abrirAplicacao(session);
@@ -765,7 +783,7 @@ function bind(){
   $('conviteForm')?.addEventListener('submit', async e => {
     e.preventDefault();
     const mensagem=$('conviteMensagem'); mensagem.classList.remove('success'); mensagem.textContent='Enviando convite...';
-    const { data, error } = await supabase.functions.invoke('admin-users', { body:{ action:'invite', email:only($('conviteEmail').value), tenantId:tenantAtual.id } });
+    const { data, error } = await supabase.functions.invoke('admin-users', { body:{ action:'invite', email:only($('conviteEmail').value), tenantId:tenantAtual.id, redirectTo:linkDoTenant(tenantAtual.slug) } });
     if(error || data?.error){ mensagem.textContent=await mensagemErroFuncao(error, data, 'convite'); return; }
     mensagem.classList.add('success'); mensagem.textContent='Convite enviado. O novo usuário recebeu o perfil de Leitura.'; $('conviteEmail').value='';
     setTimeout(carregarUsuarios, 800);
