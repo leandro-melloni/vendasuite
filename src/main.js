@@ -29,7 +29,8 @@ let perfilAtual = null;
 let tenantAtual = null;
 const parametrosIniciais = new URLSearchParams(location.search);
 const acessoPorConvite = /(?:[?#&])type=invite(?:&|$)/.test(location.href) || parametrosIniciais.has('code');
-const tenantSolicitado = only(parametrosIniciais.get('tenant')).toLowerCase();
+const slugDoCaminho = decodeURIComponent(location.pathname.split('/').filter(Boolean)[0] || '').toLowerCase();
+const tenantSolicitado = only(parametrosIniciais.get('tenant') || (slugDoCaminho !== 'index.html' ? slugDoCaminho : '')).toLowerCase();
 
 function only(v){ return (v ?? '').toString().trim(); }
 
@@ -84,9 +85,7 @@ function n(v){ return Number(String(v || '0').replace(/\./g,'').replace(',','.')
 function msgConfig(cols, texto){ return `<tr><td colspan="${cols}" class="empty-table">${texto}</td></tr>`; }
 function setStatus(){ const el = $('supabaseStatus'); if(el) el.textContent = supabaseConfigured ? 'Supabase configurado.' : 'Supabase ainda não configurado. Preencha o arquivo .env.'; }
 function linkDoTenant(slug){
-  const url=new URL(location.href);
-  url.search=''; url.hash=''; url.searchParams.set('tenant',slug);
-  return url.toString();
+  return new URL(`/${encodeURIComponent(slug)}`, location.origin).toString();
 }
 
 function showScreen(targetId){
@@ -765,7 +764,7 @@ function bind(){
     if(senha !== $('confirmarSenha').value){ mensagem.textContent='As senhas não coincidem.'; return; }
     const { error }=await supabase.auth.updateUser({ password:senha, data:{ senha_pendente:false } });
     if(error){ mensagem.textContent=mensagemAutenticacao(error); return; }
-    history.replaceState({}, document.title, tenantSolicitado ? `${location.pathname}?tenant=${encodeURIComponent(tenantSolicitado)}` : location.pathname);
+    history.replaceState({}, document.title, tenantSolicitado ? `/${encodeURIComponent(tenantSolicitado)}` : '/');
     $('primeiroAcessoForm').hidden=true; $('loginForm').hidden=false;
     const { data:{session} }=await supabase.auth.getSession();
     await abrirAplicacao(session);
