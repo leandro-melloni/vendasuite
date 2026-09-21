@@ -169,10 +169,10 @@ async function abrirAplicacao(session){
     mostrarLogin('Seu usuário ainda não está vinculado a um tenant. Fale com o administrador.');
     return;
   }
-  const { data: tenant, error: tenantError } = await supabase.from('tenants').select('*').eq('id', data.tenant_id).single();
+  const { data: tenant, error: tenantError } = await supabase.from('tenants').select('*').eq('id', data.tenant_id).eq('ativo', true).single();
   if(tenantError || !tenant){
     await supabase.auth.signOut();
-    mostrarLogin('O tenant vinculado ao seu usuário não foi encontrado ou está inativo.');
+    mostrarLogin('O acesso deste tenant está desativado. Fale com o administrador da plataforma.');
     return;
   }
   if(tenantSolicitado && tenant.slug?.toLowerCase() !== tenantSolicitado){
