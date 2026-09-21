@@ -8,6 +8,10 @@ import {
   , definirTenantAtual
 } from './services/api.js';
 
+if(location.protocol === 'http:' && !['localhost','127.0.0.1'].includes(location.hostname)){
+  location.replace(`https://${location.host}${location.pathname}${location.search}${location.hash}`);
+}
+
 const $ = (id) => document.getElementById(id);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 
