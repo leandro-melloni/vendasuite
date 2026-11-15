@@ -5,12 +5,7 @@ import {
   salvarMostruario, excluirMostruario,
   buscarVendedoraPorCodigo, listarVendedoras, salvarVendedora, excluirVendedora,
   listarProdutos, buscarProdutoPorCodigo, buscarProdutosPorPrefixo, salvarProduto, excluirProduto, carregarValoresMetais, salvarValoresMetais, recalcularPrecosProdutos, salvarAcerto, listarAcertos, editarAcerto, excluirAcerto
-  , definirTenantAtual
 } from './services/api.js';
-
-if(location.protocol === 'http:' && !['localhost','127.0.0.1'].includes(location.hostname)){
-  location.replace(`https://${location.host}${location.pathname}${location.search}${location.hash}`);
-}
 
 const $ = (id) => document.getElementById(id);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
@@ -31,12 +26,15 @@ let abaAtivaMostruario = 'disponivel'; // 'disponivel' | 'alocado'
 let sessaoAtual = null;
 let perfilAtual = null;
 let tenantAtual = null;
+let superadminAtual = false;
 const parametrosIniciais = new URLSearchParams(location.search);
 const acessoPorConvite = /(?:[?#&])type=invite(?:&|$)/.test(location.href) || parametrosIniciais.has('code');
-const slugDoCaminho = decodeURIComponent(location.pathname.split('/').filter(Boolean)[0] || '').toLowerCase();
-const tenantSolicitado = only(parametrosIniciais.get('tenant') || (slugDoCaminho !== 'index.html' ? slugDoCaminho : '')).toLowerCase();
 
 function only(v){ return (v ?? '').toString().trim(); }
+function quantidadeValida(v){
+  const quantidade = Number(v);
+  return Number.isInteger(quantidade) && quantidade > 0;
+}
 
 // --- Máscaras de formatação ---
 function mascaraCpf(v) {
@@ -88,25 +86,21 @@ function isoToBr(v){ if(!v) return ''; const [a,m,d] = v.split('-'); return d &&
 function n(v){ return Number(String(v || '0').replace(/\./g,'').replace(',','.')) || 0; }
 function msgConfig(cols, texto){ return `<tr><td colspan="${cols}" class="empty-table">${texto}</td></tr>`; }
 function setStatus(){ const el = $('supabaseStatus'); if(el) el.textContent = supabaseConfigured ? 'Supabase configurado.' : 'Supabase ainda não configurado. Preencha o arquivo .env.'; }
-function linkDoTenant(slug){
-  return new URL(`/${encodeURIComponent(slug)}`, location.origin).toString();
-}
 
 function showScreen(targetId){
   if(!sessaoAtual) return;
   if(targetId === 'acerto' && perfilAtual !== 'administracao') return;
-  if(targetId === 'tenants-admin' && !ehSuperadmin()) return;
+  if(targetId === 'portal-saas' && !superadminAtual) return;
   $$('.screen').forEach(s => s.classList.toggle('active', s.id === targetId));
   if(targetId === 'mostruario') carregarMostruarios();
   if(targetId === 'vendedoras') carregarVendedoras();
   if(targetId === 'estoque') { carregarProdutos(); carregarConfiguracaoMetais(); }
   if(targetId === 'acerto') carregarAcertoBase();
   if(targetId === 'configuracoes' && perfilAtual === 'administracao') carregarUsuarios();
-  if(targetId === 'tenants-admin') carregarTenants();
+  if(targetId === 'portal-saas') carregarPortalSaas();
 }
 
 const nomesPerfis = { administracao:'Administração', escrita:'Escrita', leitura:'Leitura' };
-function ehSuperadmin(){ return perfilAtual === 'administracao' && tenantAtual?.slug?.toLowerCase() === 'vendasuite'; }
 
 function mensagemAutenticacao(error, contexto='operacao'){
   const texto=String(error?.message || error || '').toLowerCase();
@@ -152,53 +146,65 @@ function aplicarPerfil(){
   document.body.dataset.perfil = perfil;
   $('usuarioAtualEmail').textContent = sessaoAtual?.user?.email || '—';
   $('usuarioAtualPerfil').textContent = nomesPerfis[perfil] || perfil;
-  if($('usuarioAtualTenant')) $('usuarioAtualTenant').textContent = tenantAtual?.nome || tenantAtual?.slug || '—';
+  if($('tenantAtualNome')) $('tenantAtualNome').textContent = tenantAtual?.nome || '—';
+  if($('btnAbrirPortalSaas')) $('btnAbrirPortalSaas').hidden = !superadminAtual;
   $('adminUsuarios').hidden = perfil !== 'administracao';
   document.querySelector('[data-target="configuracoes"]')?.classList.toggle('admin-only-hidden', perfil !== 'administracao');
   document.querySelector('[data-target="acerto"]')?.classList.toggle('admin-only-hidden', perfil !== 'administracao');
-  $('menuTenantsAdmin')?.classList.toggle('admin-only-hidden', !ehSuperadmin());
 }
 
 function aplicarIdentidadeTenant(){
-  const nome=tenantAtual?.nome || tenantAtual?.slug || 'VendaSuite';
-  document.title=nome;
-  $$('[data-tenant-nome]').forEach(el=>{ el.textContent=nome; });
-  $$('[data-tenant-alt]').forEach(el=>{ el.alt=nome; });
+  const nome = tenantAtual?.nome || 'VendaSuite';
+  const slug = tenantAtual?.slug || 'vendasuite';
+  const contextoPlataforma = superadminAtual && slug === 'vendasuite';
+  const logoPadrao = slug === 'wn-bijouterias' ? 'assets/icone_wnbijouterias.svg' : 'assets/logo_venda_suite.svg';
+  const logo = tenantAtual?.logo_url || logoPadrao;
+
+  document.title = `${nome} | VendaSuite`;
+  document.body.dataset.tenant = slug;
+  document.body.dataset.contexto = contextoPlataforma ? 'plataforma' : 'tenant';
+  document.documentElement.style.setProperty('--tenant-primary', tenantAtual?.cor_primaria || '#7a4f2b');
+  document.documentElement.style.setProperty('--tenant-secondary', tenantAtual?.cor_secundaria || '#d7b98e');
+
+  if($('tenantHomeNome')) $('tenantHomeNome').textContent = nome;
+  if($('tenantHomeDescricao')) $('tenantHomeDescricao').textContent = contextoPlataforma
+    ? 'Administração central de tenants, acessos e operação da plataforma.'
+    : `Sistema de gestão da ${nome}: mostruários, vendedoras, produtos e acertos.`;
+
+  [$('tenantLogo'), $('tenantWatermarkLogo')].filter(Boolean).forEach(imagem => {
+    imagem.src = logo;
+    imagem.alt = nome;
+  });
+  if($('tenantWatermark')) $('tenantWatermark').hidden = contextoPlataforma;
+  if($('tenantNavigation')) $('tenantNavigation').hidden = contextoPlataforma;
+  if($('tenantLogoLink')) {
+    $('tenantLogoLink').dataset.target = contextoPlataforma ? 'portal-saas' : 'home';
+    $('tenantLogoLink').title = contextoPlataforma ? 'Ir para o Portal Superadmin' : `Ir para o início da ${nome}`;
+  }
 }
 
 async function abrirAplicacao(session){
   sessaoAtual = session;
-  const { data, error } = await supabase.from('perfis').select('perfil,tenant_id').eq('id', session.user.id).single();
+  const { data, error } = await supabase.from('perfis').select('perfil,tenant_id,tenants(id,nome,slug,ativo,logo_url,cor_primaria,cor_secundaria)').eq('id', session.user.id).single();
   if(error || !data){
     await supabase.auth.signOut();
     mostrarLogin('Seu usuário ainda não possui um perfil de acesso. Fale com o administrador.');
     return;
   }
-  if(!data.tenant_id){
+  const { data: platformAdmin } = await supabase.from('plataforma_admins').select('user_id').eq('user_id', session.user.id).maybeSingle();
+  superadminAtual = Boolean(platformAdmin);
+  if(!data.tenants?.ativo && !superadminAtual){
     await supabase.auth.signOut();
-    mostrarLogin('Seu usuário ainda não está vinculado a um tenant. Fale com o administrador.');
-    return;
-  }
-  const { data: tenant, error: tenantError } = await supabase.from('tenants').select('*').eq('id', data.tenant_id).eq('ativo', true).single();
-  if(tenantError || !tenant){
-    await supabase.auth.signOut();
-    mostrarLogin('O acesso deste tenant está desativado. Fale com o administrador da plataforma.');
-    return;
-  }
-  if(tenantSolicitado && tenant.slug?.toLowerCase() !== tenantSolicitado){
-    await supabase.auth.signOut();
-    mostrarLogin(`Este link é exclusivo do tenant ${tenantSolicitado}. Seu usuário pertence a outro tenant.`);
+    mostrarLogin('Esta loja está suspensa. Fale com o administrador da plataforma.');
     return;
   }
   perfilAtual = data.perfil;
-  tenantAtual = tenant;
-  definirTenantAtual(tenant.id);
-  document.body.dataset.tenant = tenant.slug || '';
+  tenantAtual = data.tenants;
   aplicarIdentidadeTenant();
   aplicarPerfil();
   $('authGate').classList.add('hidden');
   $('appShell').classList.remove('auth-pending');
-  showScreen('home');
+  showScreen(superadminAtual ? 'portal-saas' : 'home');
 }
 
 async function carregarUsuarios(){
@@ -210,23 +216,20 @@ async function carregarUsuarios(){
   tbody.innerHTML = data.map(usuario => `<tr><td>${html(usuario.email)}</td><td><select class="field-select" data-perfil-usuario="${usuario.id}" ${usuario.id === sessaoAtual.user.id ? 'disabled title="Seu próprio perfil não pode ser alterado aqui"' : ''}>${Object.entries(nomesPerfis).map(([valor,nome]) => `<option value="${valor}" ${usuario.perfil===valor?'selected':''}>${nome}</option>`).join('')}</select></td><td>${new Date(usuario.created_at).toLocaleDateString('pt-BR')}</td><td>${usuario.id === sessaoAtual.user.id ? '<span class="current-user-label">Usuário atual</span>' : `<button type="button" class="mini-btn danger" data-excluir-usuario="${usuario.id}" data-email-usuario="${html(usuario.email)}">Excluir</button>`}</td></tr>`).join('');
 }
 
-function limparTenantForm(){
-  $('tenantId').value=''; $('tenantNome').value=''; $('tenantSlug').value='';
-  $('btnCancelarTenant').hidden=true; $('tenantMensagem').textContent='';
-}
-
-async function carregarTenants(){
-  if(!ehSuperadmin()) return;
-  const tbody=$('tenantsTabelaBody');
-  tbody.innerHTML='<tr><td colspan="6">Carregando...</td></tr>';
-  const { data, error }=await supabase.from('tenants').select('*').order('nome');
-  if(error){ tbody.innerHTML=`<tr><td colspan="6">Erro ao carregar tenants: ${html(error.message)}</td></tr>`; return; }
-  tbody.innerHTML=(data||[]).map(t=>{
-    const possuiAtivo=Object.prototype.hasOwnProperty.call(t,'ativo');
-    const ativo=!possuiAtivo || t.ativo !== false;
-    const link=linkDoTenant(t.slug);
-    return `<tr><td>${html(t.nome||t.slug)}</td><td>${html(t.slug)}</td><td><button class="mini-btn" data-copiar-link-tenant="${html(link)}">Copiar link</button> <a class="mini-btn" href="${html(link)}" target="_blank" rel="noopener">Abrir</a></td><td>${ativo?'Ativo':'Inativo'}</td><td>${t.created_at?new Date(t.created_at).toLocaleDateString('pt-BR'):'—'}</td><td><button class="mini-btn" data-editar-tenant="${t.id}" data-tenant-nome="${html(t.nome||'')}" data-tenant-slug="${html(t.slug||'')}">Editar</button>${possuiAtivo?` <button class="mini-btn ${ativo?'danger':''}" data-status-tenant="${t.id}" data-tenant-ativo="${ativo}">${ativo?'Desativar':'Ativar'}</button>`:''}</td></tr>`;
-  }).join('') || '<tr><td colspan="6">Nenhum tenant cadastrado.</td></tr>';
+async function carregarPortalSaas(){
+  if(!superadminAtual) return;
+  const tbody = $('tenantsTabelaBody');
+  tbody.innerHTML = '<tr><td colspan="6">Carregando...</td></tr>';
+  const { data, error } = await supabase.from('tenants').select('id,nome,slug,dominio_customizado,ativo,created_at,perfis(id)').order('nome');
+  if(error){
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-table">Não foi possível carregar as lojas.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.length ? data.map(tenant => `<tr>
+    <td>${html(tenant.nome)}</td><td>${html(tenant.slug)}</td><td>${html(tenant.dominio_customizado || '—')}</td>
+    <td>${tenant.perfis?.length || 0}</td><td><span class="tenant-status ${tenant.ativo ? 'active' : 'inactive'}">${tenant.ativo ? 'Ativa' : 'Suspensa'}</span></td>
+    <td><button class="mini-btn" data-convidar-admin-tenant="${tenant.id}" ${tenant.ativo ? '' : 'disabled'}>Convidar admin</button> <button class="mini-btn ${tenant.ativo ? 'danger' : ''}" data-alternar-tenant="${tenant.id}" data-tenant-ativo="${tenant.ativo}">${tenant.ativo ? 'Suspender' : 'Reativar'}</button></td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty-table">Nenhuma loja cadastrada.</td></tr>';
 }
 
 async function iniciarAutenticacao(){
@@ -238,7 +241,7 @@ async function iniciarAutenticacao(){
   } else if(session) await abrirAplicacao(session); else mostrarLogin();
   supabase.auth.onAuthStateChange((evento, novaSessao) => {
     if(evento === 'SIGNED_OUT'){
-      sessaoAtual = null; perfilAtual = null; tenantAtual = null; definirTenantAtual(null); mostrarLogin();
+      sessaoAtual = null; perfilAtual = null; tenantAtual = null; superadminAtual = false; mostrarLogin();
     }
     if(evento === 'SIGNED_IN' && novaSessao &&
       (acessoPorConvite || novaSessao.user.user_metadata?.senha_pendente === true)){
@@ -503,8 +506,18 @@ async function carregarMostruarios(){
   }catch(e){ tbody.innerHTML = msgConfig(7, 'Não foi possível conectar ao Supabase. Confira o .env e as policies.'); console.error(e); }
 }
 
+let salvandoMostruario = false;
+
+function definirEstadoSalvamentoMostruario(salvando){
+  salvandoMostruario = salvando;
+  const botao = $('btnSalvarMostruario');
+  if(!botao) return;
+  botao.disabled = salvando;
+  botao.textContent = salvando ? 'Salvando...' : 'Salvar';
+}
+
 function limparMostruario(){ ['mostruarioId','numeroMostruario','codigoProduto','descricaoProduto','precoProdutoMostruario','qtdProduto'].forEach(id=>{ if($(id)) $(id).value=''; }); draftProdutos=[]; renderListaProdutos(); }
-function renderListaProdutos(){ const box=$('listaProdutosContainer'); if(!box) return; if(!draftProdutos.length){ box.innerHTML='<div class="lista-vazia">Nenhum produto adicionado.</div>'; if($('totalMostruarioValor')) $('totalMostruarioValor').textContent=money(0); return; } let total=0; draftProdutos.sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo),'pt-BR',{numeric:true,sensitivity:'base'})); box.innerHTML=draftProdutos.map((p,i)=>{ total += p.quantidade * p.preco; return `<div class="lista-item"><span>${html(p.codigo)}</span><span>${html(p.descricao)}</span><input aria-label="Quantidade ${html(p.codigo)}" type="number" min="1" value="${Number(p.quantidade)||0}" data-editar-qtd-draft="${i}"><span>${money(p.preco)}</span><div class="produto-acoes"><button class="mini-btn danger" data-remover-produto-draft="${i}">Excluir</button></div></div>`; }).join(''); $('totalMostruarioValor').textContent=money(total); }
+function renderListaProdutos(){ const box=$('listaProdutosContainer'); if(!box) return; if(!draftProdutos.length){ box.innerHTML='<div class="lista-vazia">Nenhum produto adicionado.</div>'; if($('totalMostruarioValor')) $('totalMostruarioValor').textContent=money(0); if($('totalMostruarioPecas')) $('totalMostruarioPecas').textContent='0'; return; } let total=0,totalPecas=0; draftProdutos.sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo),'pt-BR',{numeric:true,sensitivity:'base'})); box.innerHTML=draftProdutos.map((p,i)=>{ const quantidade=Number(p.quantidade)||0; total += quantidade * p.preco; totalPecas += quantidade; return `<div class="lista-item"><span>${html(p.codigo)}</span><span>${html(p.descricao)}</span><input aria-label="Quantidade ${html(p.codigo)}" type="number" min="1" value="${quantidade}" data-editar-qtd-draft="${i}"><span>${money(p.preco)}</span><div class="produto-acoes"><button class="mini-btn danger" data-remover-produto-draft="${i}">Excluir</button></div></div>`; }).join(''); $('totalMostruarioValor').textContent=money(total); if($('totalMostruarioPecas')) $('totalMostruarioPecas').textContent=String(totalPecas); }
 function editarMostruario(id){
   const m = mostruarios.find(x => x.id === id);
   if(!m) return;
@@ -529,10 +542,16 @@ function editarMostruario(id){
 }
 
 async function salvarFormMostruario(){
-  try{
-    const numero = only($('numeroMostruario').value);
-    if(!numero) return alert('Informe o número do mostruário.');
+  if(salvandoMostruario) return;
 
+  const numero = only($('numeroMostruario').value);
+  if(!numero) return alert('Informe o número do mostruário.');
+  if(draftProdutos.some(item => !quantidadeValida(item.quantidade))) {
+    return alert('A quantidade de todos os produtos deve ser um número inteiro maior que zero.');
+  }
+
+  definirEstadoSalvamentoMostruario(true);
+  try{
     const mExistente = mostruarios.find(x => x.id === only($('mostruarioId')?.value));
 
     await salvarMostruario({
@@ -546,6 +565,7 @@ async function salvarFormMostruario(){
 
     limparMostruario(); await carregarMostruarios(); showScreen('mostruario');
   }catch(e){ alert(`Erro ao salvar mostruário: ${e.message}`); }
+  finally{ definirEstadoSalvamentoMostruario(false); }
 }
 
 function abrirModalAlocar(id){
@@ -627,7 +647,7 @@ async function desalocarVendedora(id){
   }
 }
 
-function imprimirMostruario(){
+function imprimirMostruarioLegado(){
   const numero = only($('numeroMostruario').value) || '--';
   
   // Tenta buscar informações do mostruário atual se estiver em edição
@@ -666,25 +686,25 @@ function imprimirMostruario(){
       <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #111; padding: 28px 36px; }
-        h1 { font-size: 22px; margin-bottom: 4px; }
+        h1 { font-size: 22px; margin-bottom: 4px; color: #111; }
         .subtitulo { font-size: 13px; color: #666; margin-bottom: 20px; }
         .info-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px 24px; margin-bottom: 24px; background: #f5f5f5; padding: 14px 18px; border-radius: 8px; }
         .info-item label { display: block; font-size: 11px; color: #888; text-transform: uppercase; font-weight: 600; margin-bottom: 2px; }
         .info-item span { font-size: 15px; font-weight: 700; }
         table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-        thead tr { background: #222; color: #fff; }
-        th { padding: 9px 10px; text-align: left; font-size: 12px; }
+        thead tr { background: #eee; color: #111; }
+        th { padding: 9px 10px; text-align: left; font-size: 12px; border: 1px solid #999; }
         td { padding: 7px 10px; border-bottom: 1px solid #eee; vertical-align: middle; }
         tbody tr:nth-child(even) { background: #fafafa; }
-        .total-row { background: #222 !important; color: #fff; font-weight: 700; }
-        .total-row td { border: none; padding: 10px 10px; }
+        .total-row { background: #eee !important; color: #111; font-weight: 700; }
+        .total-row td { border: 1px solid #999; padding: 10px 10px; }
         .rodape { margin-top: 28px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
         .assinatura { border-top: 1px solid #999; padding-top: 8px; text-align: center; font-size: 12px; color: #666; margin-top: 40px; }
-        @media print { body { padding: 10px 16px; } }
+        @media print { body { padding: 10px 16px; } h1, th, .total-row { color: #111 !important; } }
       </style>
     </head>
     <body>
-      <h1>${html(tenantAtual?.nome || tenantAtual?.slug || 'VendaSuite')} — Mostruário Nº ${html(numero)}</h1>
+      <h1>${html(tenantAtual?.nome || 'VendaSuite')} — Mostruário Nº ${html(numero)}</h1>
       <p class="subtitulo">Emitido em: ${hoje()}</p>
       <div class="info-grid"${temVendedora ? '' : ' style="grid-template-columns: 1fr 1fr;"'}>
         <div class="info-item"><label>Nº Mostruário</label><span>${html(numero)}</span></div>
@@ -718,65 +738,161 @@ function imprimirMostruario(){
   setTimeout(() => { janela.focus(); janela.print(); }, 400);
 }
 
+function abrirRelatorioProdutos({titulo, subtitulo, cabecalhos, linhas, resumo}) {
+  const meio = Math.ceil(linhas.length / 2);
+  const grupos = [linhas.slice(0, meio), linhas.slice(meio)];
+  const tabela = grupo => `<table><thead><tr>${cabecalhos.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${grupo.length ? grupo.join('') : `<tr><td colspan="${cabecalhos.length}" class="vazio">—</td></tr>`}</tbody></table>`;
+  const conteudo = `<h1>${titulo}</h1><p class="subtitulo">${subtitulo}</p><div class="produtos">${tabela(grupos[0])}${tabela(grupos[1])}</div><div class="resumo">${resumo}</div><div class="assinaturas"><div class="assinatura">Assinatura do Responsável</div><div class="assinatura">Assinatura da Vendedora</div></div>`;
+  const janela = window.open('', '_blank', 'width=1100,height=750');
+  if(!janela) return alert('Permita pop-ups para imprimir.');
+  // A quantidade de cópias é definida no diálogo de impressão do navegador.
+  janela.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title><style>
+    @page{size:A4 landscape;margin:8mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:9px;color:#111;margin:0}h1{font-size:18px;margin:0 0 3px;color:#111}.subtitulo{font-size:10px;margin:0 0 8px;white-space:pre-line}.produtos{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}table{width:100%;border-collapse:collapse;table-layout:fixed}th{background:#eee;color:#111;text-align:left;padding:3px 4px;font-size:8px;border:1px solid #999}td{border:1px solid #bbb;padding:2px 4px;overflow-wrap:anywhere}th:first-child,td:first-child{width:14%}th:not(:nth-child(2)),td:not(:nth-child(2)){white-space:nowrap}.vazio{text-align:center;color:#555}.resumo{margin-top:7px;padding:8px 10px;border:2px solid #000;background:#fff;color:#000;font-size:12px;font-weight:900;display:flex;justify-content:space-between;gap:12px}.resumo span{color:#000}.assinaturas{display:grid;grid-template-columns:1fr 1fr;gap:50px;margin-top:24px}.assinatura{border-top:1px solid #888;text-align:center;padding-top:4px;color:#555}@media print{tr,.resumo,.assinaturas{break-inside:avoid}h1,th{color:#111!important}.resumo{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+  </style></head><body>${conteudo}</body></html>`);
+  janela.addEventListener('load', () => { janela.focus(); janela.print(); }, { once: true });
+  janela.document.close();
+}
+
+function compararCodigoProduto(a, b){
+  return String(a?.codigo || '').localeCompare(String(b?.codigo || ''), 'pt-BR', { numeric: true, sensitivity: 'base' });
+}
+
+function tipoCodigoProduto(codigo){
+  const prefixo = only(codigo).toUpperCase().match(/^[^0-9]+/)?.[0]?.trim();
+  return prefixo || only(codigo).toUpperCase() || '--';
+}
+
+function resumoPecasPorTipo(itens){
+  const totais = itens.reduce((acc, item) => {
+    const tipo = tipoCodigoProduto(item.codigo);
+    acc[tipo] = (acc[tipo] || 0) + (Number(item.quantidade) || 0);
+    return acc;
+  }, {});
+  return Object.entries(totais)
+    .sort(([a], [b]) => a.localeCompare(b, 'pt-BR', { numeric: true, sensitivity: 'base' }))
+    .map(([tipo, quantidade]) => `${html(tipo)}: ${String(quantidade).padStart(3, '0')}`)
+    .join(' / ');
+}
+
+function gerarRelatorioMostruarios(){
+  const antigo=$('modalMesAcerto'); antigo?.remove();
+  const modal=document.createElement('div'); modal.id='modalMesAcerto';
+  modal.innerHTML='<div class="modal-backdrop"><div class="modal"><h3>Relatório de acertos</h3><label>Mês do acerto <input type="month" id="mesRelatorioAcerto"></label><div class="modal-footer"><button type="button" class="btn light" id="cancelarMesAcerto">Cancelar</button><button type="button" class="btn blue" id="confirmarMesAcerto">Gerar</button></div></div></div>';
+  document.body.append(modal);
+  $('cancelarMesAcerto').onclick=()=>modal.remove();
+  $('confirmarMesAcerto').onclick=()=>{ const mes=$('mesRelatorioAcerto').value; if(!mes)return alert('Selecione o mês do acerto.'); modal.remove(); imprimirRelatorioAcertosDoMes(mes); };
+}
+
+function imprimirRelatorioAcertosDoMes(mes){
+  const lista=mostruarios.filter(m=>m.vendedoras && String(m.data_acerto||'').slice(0,7)===mes);
+  if(!lista.length)return alert('Nenhuma revendedora precisa fazer acerto no mês selecionado.');
+  const grupos=Object.values(lista.reduce((acc,m)=>{const chave=m.vendedora_id||m.vendedoras?.id||m.vendedoras?.codigo||m.id;(acc[chave] ||= {m,mostruarios:[]}).mostruarios.push(m);return acc;},{}));
+  const linhas=grupos.sort((a,b)=>String(a.m.data_acerto).localeCompare(String(b.m.data_acerto))).map(g=>`<tr><td>${html(g.m.vendedoras?.codigo||'--')}</td><td>${html(g.m.vendedoras?.nome||'--')}</td><td>${isoToBr(g.m.data_acerto)||'--'}</td></tr>`).join('');
+  const w=window.open('','_blank','width=800,height=650'); if(!w)return alert('Permita pop-ups para gerar o relatório.');
+  w.document.write(`<html lang="pt-BR"><meta charset="UTF-8"><title>Relatório de acertos</title><style>body{font:14px Arial;color:#111;padding:25px}h1{font-size:20px}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #bbb;padding:8px;text-align:left}th{background:#eee}@media print{h1,th{color:#111!important}}</style><h1>Revendedoras com acerto em ${mes.split('-').reverse().join('/')}</h1><p>Emitido em: ${hoje()}</p><table><thead><tr><th>Código</th><th>Revendedora</th><th>Data do acerto</th></tr></thead><tbody>${linhas}</tbody></table><p><strong>Total de revendedoras: ${grupos.length}</strong></p></html>`);
+  w.document.close(); w.focus(); w.print();
+}
+
+function imprimirMostruario(){
+  const numero = only($('numeroMostruario').value) || '--';
+  const m = mostruarios.find(x => x.id === only($('mostruarioId')?.value));
+  const estaAlocado = !!m?.vendedoras;
+  let total = 0, totalPecas = 0;
+  const produtosOrdenados = [...draftProdutos].sort(compararCodigoProduto);
+  const linhas = produtosOrdenados.map(p => {
+    const quantidade = Number(p.quantidade) || 0;
+    totalPecas += quantidade;
+    total += quantidade * Number(p.preco || 0);
+    return `<tr><td>${html(p.codigo)}</td><td>${html(p.descricao)}</td><td>${quantidade}</td><td>${money(p.preco)}</td></tr>`;
+  });
+  const vendedora = estaAlocado ? `${html(m.vendedoras.codigo)} — ${html(m.vendedoras.nome)}` : '';
+  const ultimoAcerto = estaAlocado ? isoToBr(m.data_envio) : '';
+  const proximoAcerto = estaAlocado ? isoToBr(m.data_acerto) : '';
+  abrirRelatorioProdutos({
+    titulo: `WN Bijouterias — Mostruário Nº ${html(numero)}`,
+    subtitulo: `Emitido em: ${hoje()}\nVendedora: ${vendedora}\nÚltimo acerto: ${ultimoAcerto} | Próximo acerto: ${proximoAcerto}`,
+    cabecalhos: ['Cód.', 'Descrição', 'Qtd.', 'Preço'],
+    linhas,
+    resumo: `<span>TOTAL: ${totalPecas} PEÇAS | ${resumoPecasPorTipo(produtosOrdenados)}</span><span>VALOR TOTAL: ${money(total)}</span>`
+  });
+}
+
 async function carregarAcertoBase(){ if(supabaseConfigured) { mostruarios = await listarMostruarios(); await carregarHistoricoAcertos(); } }
 async function carregarHistoricoAcertos(){if(!supabaseConfigured)return;try{acertosHistorico=await listarAcertos();const box=$('acertosHistoricoBody');if(!box)return;box.innerHTML=acertosHistorico.length?acertosHistorico.map(a=>`<tr><td>${isoToBr(a.data_acerto)||'--'}</td><td>${html(a.vendedoras?.codigo||'--')}</td><td>${html(a.vendedoras?.nome||'--')}</td><td>${money(a.valor_receber)}</td><td>${html(resumoPagamentos(a))}</td><td><button class="mini-btn" data-acerto-detalhes="${a.id}">Detalhes</button><button class="mini-btn" data-acerto-imprimir="${a.id}">Imprimir</button><button class="mini-btn" data-acerto-editar="${a.id}">Editar</button><button class="mini-btn danger" data-acerto-excluir="${a.id}">Excluir</button></td></tr>`).join(''):'<tr><td colspan="6" class="empty-table">Nenhum acerto realizado.</td></tr>';}catch(e){console.error(e);}}
 function resumoPagamentos(a){const ps=a.pagamentos?.length?a.pagamentos:[{forma:a.forma_pagamento,valor:a.valor_receber}];return ps.filter(p=>Number(p.valor||0)>0).map(p=>`${html(p.forma)}: ${money(p.valor)}`).join('\n')||'--';}
 function pagamentosDoAcerto(a){return (a.pagamentos?.length?a.pagamentos:[{forma:a.forma_pagamento,valor:a.valor_receber}]).filter(p=>Number(p.valor||0)>0);}
 function pagamentosParaImpressao(pagamentos){return pagamentos.length?pagamentos.map(p=>`${html(p.forma||'--')}: ${money(p.valor)}`).join('<br>'):'--';}
-function imprimirAcertoHistorico(a){const w=window.open('','_blank','width=800,height=600');if(!w)return;w.document.write(`<html lang="pt-BR"><meta charset="UTF-8"><title>Relatório de Acerto</title><body><h1>Acerto</h1><p>Data: ${isoToBr(a.data_acerto)}<br>Vendedora: ${html(a.vendedoras?.nome||'--')}<br>Total: ${money(a.valor_total)}<br>Comissão: ${money(a.valor_comissao)}<br>Valor a receber: ${money(a.valor_receber)}<br><strong>Formas de pagamento:</strong><br>${pagamentosParaImpressao(pagamentosDoAcerto(a))}</p></body></html>`);w.document.close();w.print();}
-function abrirDetalhesAcerto(a){mostruarioAtual={id:a.mostruario_id,numero:a.mostruario_numero||'--',vendedoras:a.vendedoras};acertoItens=(a.itens||[]).map(i=>({...i,preco:Number(i.preco||0),valor:Number(i.valor||0),vendida:Number(i.vendida||0),retirada:Number(i.retirada||0),devolvida:Number(i.devolvida||0)}));$('acertoCodigoVendedora').value=a.vendedoras?.codigo||'';$('acertoNomeVendedora').value=a.vendedoras?.nome||'';$('acertoComissao').value=a.comissao_percentual||0;[...$$('[data-acerto-form="true"]')].forEach(x=>x.style.display='');$('acertosHistorico').style.display='none';const salvar=$('btnSalvarAcerto');if(salvar)salvar.style.display='none';renderAcerto();}
+function imprimirAcertoHistorico(a){const w=window.open('','_blank','width=800,height=600');if(!w)return;w.document.write(`<html lang="pt-BR"><meta charset="UTF-8"><title>Relatório de Acerto</title><style>body{font:14px Arial;color:#111;padding:25px}h1,strong{color:#111}@media print{h1,strong{color:#111!important}}</style><body><h1>Acerto</h1><p>Data: ${isoToBr(a.data_acerto)}<br>Vendedora: ${html(a.vendedoras?.nome||'--')}<br>Total: ${money(a.valor_total)}<br>Comissão: ${money(a.valor_comissao)}<br>Valor a receber: ${money(a.valor_receber)}<br><strong>Formas de pagamento:</strong><br>${pagamentosParaImpressao(pagamentosDoAcerto(a))}</p></body></html>`);w.document.close();w.print();}
+function abrirDetalhesAcerto(a){mostruarioAtual={id:a.mostruario_id,numero:a.mostruario_numero||'--',vendedoras:a.vendedoras};acertoItens=(a.itens||[]).map(i=>({...i,preco:Number(i.preco||0),valor:Number(i.valor||0),vendida:Number(i.vendida||0),retirada:Number(i.retirada||0),devolvida:Number(i.devolvida||0)}));$('acertoCodigoVendedora').value=a.vendedoras?.codigo||'';$('acertoNomeVendedora').value=a.vendedoras?.nome||'';$('acertoComissao').value=a.comissao_percentual||0;[...$$('[data-acerto-form="true"]')].forEach(x=>x.style.display='');$('acertosHistorico').style.display='none';const salvar=$('btnSalvarAcerto');if(salvar)salvar.style.display='none';atualizarCampoDevolucaoRapida();renderAcerto();}
 function carregarPagamentosNoFormulario(a,editavel=false){pagamentosAcerto=pagamentosDoAcerto(a).map(p=>({forma:p.forma||'',valor:Number(p.valor||0)}));const box=$('acertoPagamentosLista');if(box)box.innerHTML=pagamentosAcerto.map(p=>`<div class="pagamento-linha"><select class="field-select pagamento-forma"><option>${html(p.forma)}</option></select><input class="pagamento-valor" type="number" min="0" step="0.01" value="${p.valor.toFixed(2)}">${editavel?'<button type="button" class="btn light remover-pagamento">Remover</button>':''}</div>`).join('');}
 function modoConsultaAcerto(a){acertoEmEdicao=null;abrirDetalhesAcerto(a);carregarPagamentosNoFormulario(a);$$('[data-acerto-form="true"] input,[data-acerto-form="true"] select').forEach(el=>el.disabled=true);}
 function modoEdicaoAcerto(a){acertoEmEdicao=a;abrirDetalhesAcerto(a);carregarPagamentosNoFormulario(a,true);const salvar=$('btnSalvarAcerto');if(salvar)salvar.style.display='';$$('[data-acerto-form="true"] input,[data-acerto-form="true"] select').forEach(el=>{el.disabled=false;el.readOnly=false;});}
-function gerarRelatorioAcertos(){const inicio=$('relatorioAcertoInicio').value,fim=$('relatorioAcertoFim').value;if(!inicio||!fim)return alert('Informe as duas datas.');if(inicio>fim)return alert('A data inicial não pode ser maior que a final.');const lista=acertosHistorico.filter(a=>a.data_acerto>=inicio&&a.data_acerto<=fim),total=lista.reduce((s,a)=>s+Number(a.valor_receber||0),0),w=window.open('','_blank','width=900,height=700');if(!w)return alert('Permita pop-ups para gerar o relatório.');w.document.write(`<html><meta charset="utf-8"><title>Relatório de pagamentos</title><style>body{font:14px Arial;padding:25px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #bbb;padding:8px;text-align:left}th{background:#eee}</style><h1>Relatório de pagamentos</h1><p>Período: ${isoToBr(inicio)} a ${isoToBr(fim)}</p><table><tr><th>Data</th><th>Vendedora</th><th>Pagamento</th><th>Valor recebido</th></tr>${lista.map(a=>`<tr><td>${isoToBr(a.data_acerto)}</td><td>${html(a.vendedoras?.nome||'--')}</td><td>${html(JSON.stringify(a.pagamentos||[{forma:a.forma_pagamento,valor:a.valor_receber}]))}</td><td>${money(a.valor_receber)}</td></tr>`).join('')}</table><h3>Total recebido: ${money(total)}</h3></html>`);w.document.close();w.print();}
-function gerarRelatorioAcertosComColunas(){const inicio=$('relatorioAcertoInicio').value,fim=$('relatorioAcertoFim').value;if(!inicio||!fim)return alert('Informe as duas datas.');if(inicio>fim)return alert('A data inicial não pode ser maior que a final.');const lista=acertosHistorico.filter(a=>a.data_acerto>=inicio&&a.data_acerto<=fim),valorForma=(a,forma)=>(a.pagamentos||[{forma:a.forma_pagamento,valor:a.valor_receber}]).filter(p=>String(p.forma).toLowerCase()===forma).reduce((s,p)=>s+Number(p.valor||0),0),pix=lista.reduce((s,a)=>s+valorForma(a,'pix'),0),dinheiro=lista.reduce((s,a)=>s+valorForma(a,'dinheiro'),0),w=window.open('','_blank','width=900,height=700');if(!w)return alert('Permita pop-ups para gerar o relatório.');w.document.write(`<html><meta charset="utf-8"><title>Relatório de pagamentos</title><style>body{font:14px Arial;padding:25px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #bbb;padding:8px;text-align:left}th{background:#eee}</style><h1>Relatório de pagamentos</h1><p>Período: ${isoToBr(inicio)} a ${isoToBr(fim)}</p><table><tr><th>Data</th><th>Vendedora</th><th>Pix</th><th>Dinheiro</th><th>Total</th></tr>${lista.map(a=>{const p=valorForma(a,'pix'),d=valorForma(a,'dinheiro');return `<tr><td>${isoToBr(a.data_acerto)}</td><td>${html(a.vendedoras?.nome||'--')}</td><td>${money(p)}</td><td>${money(d)}</td><td>${money(p+d)}</td></tr>`}).join('')}</table><h3>Total Pix: ${money(pix)} | Total Dinheiro: ${money(dinheiro)} | Total: ${money(pix+dinheiro)}</h3></html>`);w.document.close();w.print();}
-async function preencherMostruariosDaVendedora(){ const codigo=only($('acertoCodigoVendedora').value); $('acertoSelectMostruario').innerHTML='<option value="">Selecione</option>'; $('acertoNomeVendedora').value=''; mostruarioAtual=null; acertoItens=[]; if(!codigo){renderAcerto();return} await carregarAcertoBase(); const lista=mostruarios.filter(m=>m.vendedoras?.codigo===codigo); $('acertoNomeVendedora').value=lista[0]?.vendedoras?.nome||''; $('acertoSelectMostruario').innerHTML='<option value="">Selecione</option>'+lista.map(m=>`<option value="${m.id}">Mostruário ${html(m.numero)} — retorno ${isoToBr(m.data_acerto)||'--'}</option>`).join(''); renderAcerto(); }
+function gerarRelatorioAcertos(){const inicio=$('relatorioAcertoInicio').value,fim=$('relatorioAcertoFim').value;if(!inicio||!fim)return alert('Informe as duas datas.');if(inicio>fim)return alert('A data inicial não pode ser maior que a final.');const lista=acertosHistorico.filter(a=>a.data_acerto>=inicio&&a.data_acerto<=fim),total=lista.reduce((s,a)=>s+Number(a.valor_receber||0),0),w=window.open('','_blank','width=900,height=700');if(!w)return alert('Permita pop-ups para gerar o relatório.');w.document.write(`<html><meta charset="utf-8"><title>Relatório de pagamentos</title><style>body{font:14px Arial;padding:25px;color:#111}table{border-collapse:collapse;width:100%}th,td{border:1px solid #bbb;padding:8px;text-align:left}th{background:#eee;color:#111}@media print{h1,h3,th{color:#111!important}}</style><h1>Relatório de pagamentos</h1><p>Período: ${isoToBr(inicio)} a ${isoToBr(fim)}</p><table><tr><th>Data</th><th>Vendedora</th><th>Pagamento</th><th>Valor recebido</th></tr>${lista.map(a=>`<tr><td>${isoToBr(a.data_acerto)}</td><td>${html(a.vendedoras?.nome||'--')}</td><td>${html(JSON.stringify(a.pagamentos||[{forma:a.forma_pagamento,valor:a.valor_receber}]))}</td><td>${money(a.valor_receber)}</td></tr>`).join('')}</table><h3>Total recebido: ${money(total)}</h3></html>`);w.document.close();w.print();}
+function gerarRelatorioAcertosComColunas(){const inicio=$('relatorioAcertoInicio').value,fim=$('relatorioAcertoFim').value;if(!inicio||!fim)return alert('Informe as duas datas.');if(inicio>fim)return alert('A data inicial não pode ser maior que a final.');const lista=acertosHistorico.filter(a=>a.data_acerto>=inicio&&a.data_acerto<=fim),valorForma=(a,forma)=>(a.pagamentos||[{forma:a.forma_pagamento,valor:a.valor_receber}]).filter(p=>String(p.forma).toLowerCase()===forma).reduce((s,p)=>s+Number(p.valor||0),0),pix=lista.reduce((s,a)=>s+valorForma(a,'pix'),0),dinheiro=lista.reduce((s,a)=>s+valorForma(a,'dinheiro'),0),w=window.open('','_blank','width=900,height=700');if(!w)return alert('Permita pop-ups para gerar o relatório.');w.document.write(`<html><meta charset="utf-8"><title>Relatório de pagamentos</title><style>body{font:14px Arial;padding:25px;color:#111}table{border-collapse:collapse;width:100%}th,td{border:1px solid #bbb;padding:8px;text-align:left}th{background:#eee;color:#111}@media print{h1,h3,th{color:#111!important}}</style><h1>Relatório de pagamentos</h1><p>Período: ${isoToBr(inicio)} a ${isoToBr(fim)}</p><table><tr><th>Data</th><th>Vendedora</th><th>Pix</th><th>Dinheiro</th><th>Total</th></tr>${lista.map(a=>{const p=valorForma(a,'pix'),d=valorForma(a,'dinheiro');return `<tr><td>${isoToBr(a.data_acerto)}</td><td>${html(a.vendedoras?.nome||'--')}</td><td>${money(p)}</td><td>${money(d)}</td><td>${money(p+d)}</td></tr>`}).join('')}</table><h3>Total Pix: ${money(pix)} | Total Dinheiro: ${money(dinheiro)} | Total: ${money(pix+dinheiro)}</h3></html>`);w.document.close();w.print();}
+async function preencherMostruariosDaVendedora(){ const codigo=only($('acertoCodigoVendedora').value); $('acertoSelectMostruario').innerHTML='<option value="">Selecione</option>'; $('acertoNomeVendedora').value=''; mostruarioAtual=null; acertoItens=[]; atualizarCampoDevolucaoRapida(); if(!codigo){renderAcerto();return} await carregarAcertoBase(); const lista=mostruarios.filter(m=>m.vendedoras?.codigo===codigo); $('acertoNomeVendedora').value=lista[0]?.vendedoras?.nome||''; $('acertoSelectMostruario').innerHTML='<option value="">Selecione</option>'+lista.map(m=>`<option value="${m.id}">Mostruário ${html(m.numero)} — retorno ${isoToBr(m.data_acerto)||'--'}</option>`).join(''); renderAcerto(); }
 function atualizarResumoAcerto(){const total=acertoItens.reduce((s,i)=>s+i.valor,0),pct=Number($('acertoComissao')?.value||0);$('acertoValorReceber').textContent=money(total*(1-pct/100));}
-function renderAcerto(){ const box=$('acertoListaContainer'); if(!box)return; if(!mostruarioAtual){box.innerHTML='<div class="lista-vazia">Selecione um mostruário.</div>'; $('acertoTotalPecas').textContent='0';$('acertoTotalValor').textContent=money(0);atualizarResumoAcerto();return} let pecas=0,total=0; box.innerHTML=acertoItens.map((i,index)=>{pecas+=i.vendida;total+=i.valor;return `<div class="acerto-item"><span>${html(i.codigo)}</span><span>${html(i.descricao)}</span><span>${i.retirada}</span><input aria-label="Quantidade devolvida ${html(i.codigo)}" type="number" min="0" max="${i.retirada}" value="${i.devolvida}" data-devolucao="${index}"><span>${i.vendida}</span><span>${money(i.valor)}</span></div>`}).join('');$('acertoTotalPecas').textContent=pecas;$('acertoTotalValor').textContent=money(total);atualizarResumoAcerto(); }
-function selecionarMostruarioAcerto(){mostruarioAtual=mostruarios.find(m=>m.id===$('acertoSelectMostruario').value)||null;acertoItens=(mostruarioAtual?.mostruario_itens||[]).map(i=>({produto_id:i.produto_id,codigo:i.produtos?.codigo||'',descricao:i.produtos?.descricao||'',retirada:Number(i.quantidade||0),devolvida:0,vendida:Number(i.quantidade||0),preco:Number(i.produtos?.preco||0),valor:Number(i.quantidade||0)*Number(i.produtos?.preco||0)}));const atraso=mostruarioAtual?.data_acerto&&new Date(`${mostruarioAtual.data_acerto}T23:59:59`)<new Date();$('acertoComissao').value=atraso?'40':'50';renderAcerto();}
+function renderAcerto(){ const box=$('acertoListaContainer'); if(!box)return; if(!mostruarioAtual){box.innerHTML='<div class="lista-vazia">Selecione um mostruário.</div>'; $('acertoTotalDevolvidas').textContent='0';$('acertoTotalPecas').textContent='0';$('acertoTotalValor').textContent=money(0);atualizarResumoAcerto();return} let devolvidas=0,pecas=0,total=0; box.innerHTML=acertoItens.map((i,index)=>{devolvidas+=i.devolvida;pecas+=i.vendida;total+=i.valor;return `<div class="acerto-item"><span>${html(i.codigo)}</span><span>${html(i.descricao)}</span><span>${i.retirada}</span><input aria-label="Quantidade devolvida ${html(i.codigo)}" type="number" min="0" max="${i.retirada}" value="${i.devolvida}" data-devolucao="${index}"><span>${i.vendida}</span><span>${money(i.valor)}</span></div>`}).join('');$('acertoTotalDevolvidas').textContent=devolvidas;$('acertoTotalPecas').textContent=pecas;$('acertoTotalValor').textContent=money(total);atualizarResumoAcerto(); }
+function mensagemDevolucaoRapida(texto='',tipo=''){const mensagem=$('acertoCodigoDevolucaoMensagem');if(!mensagem)return;mensagem.textContent=texto;mensagem.className=`acerto-devolucao-mensagem ${tipo}`;}
+function atualizarCampoDevolucaoRapida(){const input=$('acertoCodigoDevolucao');if(!input)return;input.disabled=!mostruarioAtual;input.value='';mensagemDevolucaoRapida();}
+function prepararProximaDevolucao(input,codigo){
+  input.value=codigo.match(/^[A-Z]+/)?.[0]||'';
+  input.focus();
+  input.setSelectionRange(input.value.length,input.value.length);
+}
+function lancarDevolucaoPorCodigo(){
+  const input=$('acertoCodigoDevolucao'),codigo=only(input?.value).toUpperCase();
+  if(!codigo)return;
+  if(!mostruarioAtual){mensagemDevolucaoRapida('Selecione um mostruário antes de lançar a devolução.','erro');return;}
+  const item=acertoItens.find(i=>String(i.codigo).toUpperCase()===codigo);
+  if(!item){
+    mensagemDevolucaoRapida(`O produto ${codigo} não pertence a este mostruário.`,'erro');
+    prepararProximaDevolucao(input,codigo);
+    return;
+  }
+  if(item.devolvida>=item.retirada){
+    mensagemDevolucaoRapida(`Todas as ${item.retirada} unidades de ${codigo} já foram devolvidas.`,'erro');
+    prepararProximaDevolucao(input,codigo);
+    return;
+  }
+  item.devolvida+=1;
+  item.vendida=item.retirada-item.devolvida;
+  item.valor=item.vendida*item.preco;
+  renderAcerto();
+  mensagemDevolucaoRapida(`${codigo}: devolução registrada (${item.devolvida} de ${item.retirada}).`,'sucesso');
+  prepararProximaDevolucao(input,codigo);
+}
+function selecionarMostruarioAcerto(){mostruarioAtual=mostruarios.find(m=>m.id===$('acertoSelectMostruario').value)||null;acertoItens=(mostruarioAtual?.mostruario_itens||[]).map(i=>({produto_id:i.produto_id,codigo:i.produtos?.codigo||'',descricao:i.produtos?.descricao||'',retirada:Number(i.quantidade||0),devolvida:0,vendida:Number(i.quantidade||0),preco:Number(i.produtos?.preco||0),valor:Number(i.quantidade||0)*Number(i.produtos?.preco||0)}));const atraso=mostruarioAtual?.data_acerto&&new Date(`${mostruarioAtual.data_acerto}T23:59:59`)<new Date();$('acertoComissao').value=atraso?'40':'50';atualizarCampoDevolucaoRapida();renderAcerto();}
 function lerPagamentosAcerto(){const linhas=[...$$('#acertoPagamentosLista .pagamento-linha')];if(linhas.length)pagamentosAcerto=linhas.map(l=>({forma:l.querySelector('.pagamento-forma')?.value||'',valor:Number(l.querySelector('.pagamento-valor')?.value)||0}));return pagamentosAcerto.filter(p=>Number(p.valor)>0).map(p=>({forma:p.forma,valor:Number(p.valor)}));}
 function validarPagamentosAcerto(){const total=acertoItens.reduce((s,i)=>s+i.valor,0),pct=Number($('acertoComissao')?.value||0),receber=total*(1-pct/100),pago=lerPagamentosAcerto().reduce((s,p)=>s+p.valor,0);let aviso=$('acertoPagamentoAviso');if(!aviso){aviso=document.createElement('small');aviso.id='acertoPagamentoAviso';$('acertoPagamentosLista')?.after(aviso);}aviso.textContent=`Recebido: ${money(pago)} | A receber: ${money(receber)}`;aviso.style.color=Math.abs(pago-receber)<=0.01?'green':'#b00020';return Math.abs(pago-receber)<=0.01;}
 function limparListaMostruariosAcerto(){if($('acertoSelectMostruario'))$('acertoSelectMostruario').innerHTML='<option value="">Selecione</option>';}
-function limparAcerto(){['acertoCodigoVendedora','acertoNomeVendedora','acertoSelectMostruario'].forEach(id=>{if($(id))$(id).value='';});acertoEmEdicao=null;mostruarioAtual=null;acertoItens=[];pagamentosAcerto=[{forma:'Pix',valor:0}];const box=$('acertoPagamentosLista');if(box)box.innerHTML='<div class="pagamento-linha"><select class="field-select pagamento-forma"><option>Pix</option><option>Dinheiro</option></select><input class="pagamento-valor" type="number" min="0" step="0.01" placeholder="Valor"><button type="button" class="btn light remover-pagamento">Remover</button></div>';renderAcerto();validarPagamentosAcerto();}
+function limparAcerto(){['acertoCodigoVendedora','acertoNomeVendedora','acertoSelectMostruario'].forEach(id=>{if($(id))$(id).value='';});acertoEmEdicao=null;mostruarioAtual=null;acertoItens=[];pagamentosAcerto=[{forma:'Pix',valor:0}];const box=$('acertoPagamentosLista');if(box)box.innerHTML='<div class="pagamento-linha"><select class="field-select pagamento-forma"><option>Pix</option><option>Dinheiro</option></select><input class="pagamento-valor" type="number" min="0" step="0.01" placeholder="Valor"><button type="button" class="btn light remover-pagamento">Remover</button></div>';atualizarCampoDevolucaoRapida();renderAcerto();validarPagamentosAcerto();}
 async function salvarAcertoAtual(){try{if(!mostruarioAtual||!acertoItens.length)return alert('Selecione um mostruário com itens.');const pagamentos=lerPagamentosAcerto(),total=acertoItens.reduce((s,i)=>s+i.valor,0),pct=Number($('acertoComissao').value),receber=total*(1-pct/100),pago=pagamentos.reduce((s,p)=>s+p.valor,0);if(!pagamentos.length)return alert('Informe ao menos uma forma de pagamento e seu valor.');if(Math.abs(pago-receber)>0.01)return alert(`A soma dos pagamentos (${money(pago)}) deve ser igual ao valor a receber (${money(receber)}).`);const dados={itens:acertoItens,total_pecas:acertoItens.reduce((s,i)=>s+i.vendida,0),valor_total:total,comissao_percentual:pct,valor_comissao:total*pct/100,valor_receber:receber,forma_pagamento:pagamentos[0].forma,pagamentos};if(acertoEmEdicao){await editarAcerto(acertoEmEdicao.id,dados);acertoEmEdicao=null;mostruarioAtual=null;acertoItens=[];await carregarHistoricoAcertos();alert('Acerto atualizado com sucesso.');return;}await salvarAcerto({...dados,mostruario_id:mostruarioAtual.id,vendedora_id:mostruarioAtual.vendedora_id,data_acerto:new Date().toISOString().slice(0,10)});await excluirMostruario(mostruarioAtual.id);mostruarios=mostruarios.filter(m=>m.id!==mostruarioAtual.id);mostruarioAtual=null;acertoItens=[];await carregarMostruarios();alert('Acerto salvo e mostruário removido com sucesso.');}catch(e){alert(`Erro ao salvar acerto: ${e.message}`)}}
-function imprimirAcerto(){if(!mostruarioAtual)return alert('Selecione um mostruário.');const total=acertoItens.reduce((s,i)=>s+i.valor,0),pct=Number($('acertoComissao').value),vend=mostruarioAtual.vendedoras||{},pagamentos=lerPagamentosAcerto(),w=window.open('','_blank','width=850,height=700');if(!w)return alert('Permita pop-ups para imprimir.');w.document.write(`<html lang="pt-BR"><meta charset="UTF-8"><title>Relatório de Acerto</title><style>body{font:14px Arial;padding:28px}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #bbb;padding:8px;text-align:left}th{background:#eee}</style><h1>Relatório de Acerto</h1><p>Vendedora: ${html(vend.codigo)} — ${html(vend.nome)} | Mostruário ${html(mostruarioAtual.numero)} | ${hoje()}</p><table><tr><th>Código</th><th>Descrição</th><th>Retirada</th><th>Devolvida</th><th>Vendida</th><th>Preço unit.</th><th>Valor</th></tr>${acertoItens.map(i=>`<tr><td>${html(i.codigo)}</td><td>${html(i.descricao)}</td><td>${i.retirada}</td><td>${i.devolvida}</td><td>${i.vendida}</td><td>${money(i.preco)}</td><td>${money(i.valor)}</td></tr>`).join('')}</table><p>Peças: ${acertoItens.reduce((s,i)=>s+i.vendida,0)}<br>Valor total: ${money(total)}<br>Comissão (${pct}%): ${money(total*pct/100)}<br>Valor a receber: ${money(total*(1-pct/100))}<br><strong>Formas de pagamento:</strong><br>${pagamentosParaImpressao(pagamentos)}</p></html>`);w.document.close();setTimeout(()=>{w.focus();w.print()},300);}
+function imprimirAcerto(){
+  if(!mostruarioAtual) return alert('Selecione um mostruário.');
+  const total = acertoItens.reduce((s, i) => s + Number(i.valor || 0), 0);
+  const pct = Number($('acertoComissao').value);
+  const vend = mostruarioAtual.vendedoras || {};
+  const pagamentos = lerPagamentosAcerto();
+  const devolvidas = acertoItens.reduce((s, i) => s + Number(i.devolvida || 0), 0);
+  const vendidas = acertoItens.reduce((s, i) => s + Number(i.vendida || 0), 0);
+  const itensOrdenados = [...acertoItens].sort(compararCodigoProduto);
+  abrirRelatorioProdutos({
+    titulo: 'Relatório de Acerto',
+    subtitulo: `Vendedora: ${html(vend.codigo)} — ${html(vend.nome)} | Mostruário ${html(mostruarioAtual.numero)} | ${hoje()}`,
+    cabecalhos: ['Cód.', 'Descrição', 'Ret.', 'Dev.', 'Vend.', 'Preço', 'Valor'],
+    linhas: itensOrdenados.map(i => `<tr><td>${html(i.codigo)}</td><td>${html(i.descricao)}</td><td>${i.retirada}</td><td>${i.devolvida}</td><td>${i.vendida}</td><td>${money(i.preco)}</td><td>${money(i.valor)}</td></tr>`),
+    resumo: `<span>QTD DEV: ${devolvidas} | QTD VEND: ${vendidas} | TOTAL: ${money(total)} | COMISSÃO (${pct}%): ${money(total*pct/100)} | A RECEBER: ${money(total*(1-pct/100))}</span><span>${pagamentosParaImpressao(pagamentos)}</span>`
+  });
+}
 
 function bind(){
-  $('tenantForm')?.addEventListener('submit',async e=>{
-    e.preventDefault(); if(!ehSuperadmin()) return;
-    const id=only($('tenantId').value), nome=only($('tenantNome').value);
-    const slug=only($('tenantSlug').value).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
-    const mensagem=$('tenantMensagem'); mensagem.textContent='Salvando...';
-    if(!nome||!slug){ mensagem.textContent='Informe o nome e o identificador do tenant.'; return; }
-    const query=id?supabase.from('tenants').update({nome,slug}).eq('id',id):supabase.from('tenants').insert({nome,slug});
-    const { error }=await query;
-    if(error){ mensagem.textContent=`Não foi possível salvar: ${error.message}`; return; }
-    limparTenantForm(); await carregarTenants();
-  });
-  $('btnCancelarTenant')?.addEventListener('click',limparTenantForm);
-  $('tenantsTabelaBody')?.addEventListener('click',async e=>{
-    const copiar=e.target.closest('[data-copiar-link-tenant]');
-    if(copiar){
-      try{ await navigator.clipboard.writeText(copiar.dataset.copiarLinkTenant); copiar.textContent='Copiado!'; setTimeout(()=>copiar.textContent='Copiar link',1500); }
-      catch(_erro){ window.prompt('Copie o link do tenant:',copiar.dataset.copiarLinkTenant); }
-      return;
-    }
-    const editar=e.target.closest('[data-editar-tenant]');
-    if(editar){ $('tenantId').value=editar.dataset.editarTenant; $('tenantNome').value=editar.dataset.tenantNome; $('tenantSlug').value=editar.dataset.tenantSlug; $('btnCancelarTenant').hidden=false; $('tenantNome').focus(); return; }
-    const status=e.target.closest('[data-status-tenant]');
-    if(!status) return;
-    const ativo=status.dataset.tenantAtivo==='true';
-    if(ativo && status.dataset.statusTenant===tenantAtual.id){ alert('O tenant principal VendaSuite não pode ser desativado.'); return; }
-    const { error }=await supabase.from('tenants').update({ativo:!ativo}).eq('id',status.dataset.statusTenant);
-    if(error) alert(`Não foi possível alterar o status: ${error.message}`); else await carregarTenants();
-  });
   $('primeiroAcessoForm')?.addEventListener('submit', async e => {
     e.preventDefault();
     const senha=$('novaSenha').value, mensagem=$('primeiroAcessoMensagem');
     if(senha !== $('confirmarSenha').value){ mensagem.textContent='As senhas não coincidem.'; return; }
     const { error }=await supabase.auth.updateUser({ password:senha, data:{ senha_pendente:false } });
     if(error){ mensagem.textContent=mensagemAutenticacao(error); return; }
-    history.replaceState({}, document.title, tenantSolicitado ? `/${encodeURIComponent(tenantSolicitado)}` : '/');
+    history.replaceState({}, document.title, location.pathname);
     $('primeiroAcessoForm').hidden=true; $('loginForm').hidden=false;
     const { data:{session} }=await supabase.auth.getSession();
     await abrirAplicacao(session);
@@ -791,17 +907,60 @@ function bind(){
     mensagem.textContent=''; $('loginSenha').value=''; await abrirAplicacao(data.session);
   });
   $('btnLogout')?.addEventListener('click', async () => { await supabase?.auth.signOut(); });
+  $('tenantNome')?.addEventListener('input', e => {
+    const slug = only(e.currentTarget.value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    if($('tenantSlug') && !$('tenantSlug').dataset.editado) $('tenantSlug').value = slug;
+  });
+  $('tenantSlug')?.addEventListener('input', e => { e.currentTarget.dataset.editado = e.currentTarget.value ? 'true' : ''; });
+  $('tenantForm')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    if(!superadminAtual) return;
+    const mensagem = $('tenantMensagem');
+    const botao = e.currentTarget.querySelector('button[type="submit"]');
+    mensagem.textContent = 'Criando loja...'; botao.disabled = true;
+    let tenantCriado = false;
+    try {
+      const nome = only($('tenantNome').value), slug = only($('tenantSlug').value).toLowerCase(), email = only($('tenantAdminEmail').value);
+      const { data: tenant, error } = await supabase.from('tenants').insert({ nome, slug }).select('id').single();
+      if(error) throw error;
+      tenantCriado = true;
+      const convite = await supabase.functions.invoke('admin-users', { body:{ action:'invite', email, tenantId:tenant.id, perfil:'administracao', redirectTo:location.origin } });
+      if(convite.error || convite.data?.error) throw new Error(await mensagemErroFuncao(convite.error, convite.data, 'convite'));
+      mensagem.textContent = 'Loja criada e convite do administrador enviado.';
+      e.currentTarget.reset(); delete $('tenantSlug').dataset.editado;
+      await carregarPortalSaas();
+    } catch(error) { mensagem.textContent = tenantCriado ? `A loja foi criada, mas o convite falhou: ${error.message}` : `Não foi possível criar a loja: ${error.message}`; }
+    finally { botao.disabled = false; }
+  });
+  $('tenantsTabelaBody')?.addEventListener('click', async e => {
+    const convite = e.target.closest('[data-convidar-admin-tenant]');
+    if(convite && superadminAtual){
+      const email = prompt('E-mail do novo administrador da loja:');
+      if(!email) return;
+      const result = await supabase.functions.invoke('admin-users', { body:{ action:'invite', email:only(email), tenantId:convite.dataset.convidarAdminTenant, perfil:'administracao', redirectTo:location.origin } });
+      if(result.error || result.data?.error) return alert(await mensagemErroFuncao(result.error, result.data, 'convite'));
+      alert('Convite enviado.'); await carregarPortalSaas(); return;
+    }
+    const botao = e.target.closest('[data-alternar-tenant]');
+    if(!botao || !superadminAtual) return;
+    const ativo = botao.dataset.tenantAtivo === 'true';
+    if(ativo && botao.dataset.alternarTenant === tenantAtual?.id) return alert('A loja vinculada à sua sessão não pode ser suspensa.');
+    if(!confirm(`${ativo ? 'Suspender' : 'Reativar'} esta loja?`)) return;
+    const { error } = await supabase.from('tenants').update({ ativo:!ativo, updated_at:new Date().toISOString() }).eq('id', botao.dataset.alternarTenant);
+    if(error) return alert(`Erro: ${error.message}`);
+    await carregarPortalSaas();
+  });
   $('conviteForm')?.addEventListener('submit', async e => {
     e.preventDefault();
     const mensagem=$('conviteMensagem'); mensagem.classList.remove('success'); mensagem.textContent='Enviando convite...';
-    const { data, error } = await supabase.functions.invoke('admin-users', { body:{ action:'invite', email:only($('conviteEmail').value), tenantId:tenantAtual.id, redirectTo:linkDoTenant(tenantAtual.slug) } });
+    const { data, error } = await supabase.functions.invoke('admin-users', { body:{ action:'invite', email:only($('conviteEmail').value) } });
     if(error || data?.error){ mensagem.textContent=await mensagemErroFuncao(error, data, 'convite'); return; }
     mensagem.classList.add('success'); mensagem.textContent='Convite enviado. O novo usuário recebeu o perfil de Leitura.'; $('conviteEmail').value='';
     setTimeout(carregarUsuarios, 800);
   });
   $('usuariosTabelaBody')?.addEventListener('change', async e => {
     const id=e.target.dataset.perfilUsuario; if(!id)return;
-    const { error }=await supabase.from('perfis').update({ perfil:e.target.value, updated_at:new Date().toISOString() }).eq('tenant_id',tenantAtual.id).eq('id',id);
+    const { error }=await supabase.from('perfis').update({ perfil:e.target.value, updated_at:new Date().toISOString() }).eq('id',id);
     if(error){ alert('Não foi possível alterar o perfil. Atualize a página e tente novamente.'); await carregarUsuarios(); }
   });
   $('usuariosTabelaBody')?.addEventListener('click', async e => {
@@ -833,12 +992,16 @@ function bind(){
   $$('.nav-btn').forEach(btn => btn.addEventListener('click', e => { e.preventDefault(); const target=btn.dataset.target; if(target==='vendedora-cadastro') limparVendedora(); if(target==='produto-cadastro') limparProduto(); if(target) showScreen(target); }));
   $('btnNovoMostruario')?.addEventListener('click', ()=>{ limparMostruario(); showScreen('mostruario-incluir'); });
   $('btnImprimirMostruario')?.addEventListener('click', imprimirMostruario);
+  if(!$('btnRelatorioMostruario')){ const b=document.createElement('button'); b.id='btnRelatorioMostruario'; b.type='button'; b.className='btn light'; b.textContent='ACERTOS DO MÊS'; $('btnNovoMostruario')?.before(b); }
+  $('btnRelatorioMostruario').style.display = abaAtivaMostruario === 'alocado' ? '' : 'none';
+  $('btnRelatorioMostruario')?.addEventListener('click', gerarRelatorioMostruarios);
 
   // --- Abas Disponíveis / Alocados ---
   $$('.aba-mostruario').forEach(btn => {
     btn.addEventListener('click', () => {
       abaAtivaMostruario = btn.dataset.aba;
       $$('.aba-mostruario').forEach(b => b.classList.toggle('aba-ativa', b.dataset.aba === abaAtivaMostruario));
+      if($('btnRelatorioMostruario')) $('btnRelatorioMostruario').style.display = abaAtivaMostruario === 'alocado' ? '' : 'none';
       carregarMostruarios();
     });
   });
@@ -909,6 +1072,22 @@ function bind(){
   // --- Autocomplete por Prefixo do Produto (Mostruário) ---
   const inputCodigo = $('codigoProduto');
   const dropdown = $('dropdownSugestoesProduto');
+  let ultimoCodigoDuplicadoAvisado = '';
+
+  function produtoJaIncluido(produtoOuCodigo) {
+    const produtoId = produtoOuCodigo?.id;
+    const codigo = String(produtoOuCodigo?.codigo || produtoOuCodigo || '').toUpperCase();
+    return draftProdutos.some(item =>
+      (produtoId && item.produto_id === produtoId) ||
+      String(item.codigo || '').toUpperCase() === codigo
+    );
+  }
+
+  function avisarProdutoJaIncluido(codigo) {
+    if(ultimoCodigoDuplicadoAvisado === codigo) return;
+    ultimoCodigoDuplicadoAvisado = codigo;
+    alert(`O produto ${codigo} já foi incluído neste mostruário.`);
+  }
 
   function fecharDropdown() {
     if(dropdown) {
@@ -927,6 +1106,7 @@ function bind(){
 
   inputCodigo?.addEventListener('input', async () => {
     const val = only(inputCodigo.value).toUpperCase();
+    if(val !== ultimoCodigoDuplicadoAvisado) ultimoCodigoDuplicadoAvisado = '';
     if (!val) {
       if($('descricaoProduto')) $('descricaoProduto').value = '';
       if($('precoProdutoMostruario')) $('precoProdutoMostruario').value = '';
@@ -936,11 +1116,27 @@ function bind(){
 
     // Busca por prefixo
     try {
-      const sugestoes = await buscarProdutosPorPrefixo(val);
+      const produtosEncontrados = await buscarProdutosPorPrefixo(val);
+      const produtoExato = produtosEncontrados.find(p => String(p.codigo).toUpperCase() === val);
+      if(produtoExato && produtoJaIncluido(produtoExato)) {
+        fecharDropdown();
+        if($('descricaoProduto')) $('descricaoProduto').value = '';
+        if($('precoProdutoMostruario')) $('precoProdutoMostruario').value = '';
+        avisarProdutoJaIncluido(val);
+        return;
+      }
+
+      const sugestoes = produtosEncontrados.filter(p => !produtoJaIncluido(p));
       if(!sugestoes.length) {
         fecharDropdown();
         // Tenta exato
         const exato = await buscarProdutoPorCodigo(val);
+        if(exato && produtoJaIncluido(exato)) {
+          if($('descricaoProduto')) $('descricaoProduto').value = '';
+          if($('precoProdutoMostruario')) $('precoProdutoMostruario').value = '';
+          avisarProdutoJaIncluido(val);
+          return;
+        }
         if($('descricaoProduto')) $('descricaoProduto').value = exato?.descricao || '';
         if($('precoProdutoMostruario')) $('precoProdutoMostruario').value = exato ? money(exato.preco) : '';
         return;
@@ -976,6 +1172,33 @@ function bind(){
       });
     } catch(err) {
       console.error('Erro ao buscar sugestões de produtos:', err);
+    }
+  });
+
+  inputCodigo?.addEventListener('keydown', async event => {
+    if(event.key !== 'Enter') return;
+    event.preventDefault();
+
+    const codigo = only(inputCodigo.value).toUpperCase();
+    if(!codigo) return;
+
+    try {
+      const produto = await buscarProdutoPorCodigo(codigo);
+      if(!produto) {
+        fecharDropdown();
+        alert('Produto não encontrado.');
+        return inputCodigo.focus();
+      }
+      if(produtoJaIncluido(produto)) {
+        fecharDropdown();
+        avisarProdutoJaIncluido(codigo);
+        return inputCodigo.focus();
+      }
+      selecionarProdutoSugestao(produto);
+    } catch(err) {
+      console.error('Erro ao buscar produto pelo código:', err);
+      alert('Não foi possível buscar o produto. Tente novamente.');
+      inputCodigo.focus();
     }
   });
 
@@ -1034,11 +1257,40 @@ function bind(){
     }
   });
 
-  $('btnAdicionarProduto')?.addEventListener('click', async () => { const codigo=only($('codigoProduto').value).toUpperCase(); const p = await buscarProdutoPorCodigo(codigo); if(!p) return alert('Produto não encontrado.'); draftProdutos.push({ produto_id:p.id, codigo:p.codigo, descricao:p.descricao, preco:Number(p.preco||0), quantidade:Number($('qtdProduto').value||0) }); $('codigoProduto').value=''; $('descricaoProduto').value=''; $('precoProdutoMostruario').value=''; $('qtdProduto').value=''; fecharDropdown(); renderListaProdutos(); });
+  $('btnAdicionarProduto')?.addEventListener('click', async () => {
+    const codigo = only($('codigoProduto').value).toUpperCase();
+    const quantidade = Number($('qtdProduto').value);
+    if(!quantidadeValida(quantidade)) {
+      alert('Informe uma quantidade inteira maior que zero.');
+      return $('qtdProduto')?.focus();
+    }
+    const p = await buscarProdutoPorCodigo(codigo);
+    if(!p) return alert('Produto não encontrado.');
+    if(produtoJaIncluido(p)) {
+      avisarProdutoJaIncluido(codigo);
+      return inputCodigo?.focus();
+    }
+    draftProdutos.push({ produto_id:p.id, codigo:p.codigo, descricao:p.descricao, preco:Number(p.preco||0), quantidade });
+    $('codigoProduto').value = '';
+    $('descricaoProduto').value = '';
+    $('precoProdutoMostruario').value = '';
+    $('qtdProduto').value = '';
+    ultimoCodigoDuplicadoAvisado = '';
+    fecharDropdown();
+    renderListaProdutos();
+    inputCodigo?.focus();
+  });
+  $('qtdProduto')?.addEventListener('keydown', event => {
+    if(event.key !== 'Enter') return;
+    event.preventDefault();
+    $('btnAdicionarProduto')?.click();
+  });
   $('acertoCodigoVendedora')?.addEventListener('input', e=>{const input=e.currentTarget;input.value=input.value.replace(/\D/g,'').slice(0,3);if(input.value.length===3)preencherMostruariosDaVendedora().then(()=>$('acertoSelectMostruario')?.focus());});
   $('acertoCodigoVendedora')?.addEventListener('change', preencherMostruariosDaVendedora);
   $('acertoCodigoVendedora')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();preencherMostruariosDaVendedora();}});
   $('acertoSelectMostruario')?.addEventListener('change',selecionarMostruarioAcerto);
+  $('acertoCodigoDevolucao')?.addEventListener('input',e=>{e.currentTarget.value=e.currentTarget.value.toUpperCase();mensagemDevolucaoRapida();});
+  $('acertoCodigoDevolucao')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();lancarDevolucaoPorCodigo();}});
   $('acertoComissao')?.addEventListener('input',atualizarResumoAcerto);
   $('btnAdicionarPagamento')?.addEventListener('click',()=>{pagamentosAcerto.push({forma:'Dinheiro',valor:0});$('acertoPagamentosLista').insertAdjacentHTML('beforeend','<div class="pagamento-linha"><select class="field-select pagamento-forma"><option>Pix</option><option>Dinheiro</option></select><input class="pagamento-valor" type="number" min="0" step="0.01" placeholder="Valor"><button type="button" class="btn light remover-pagamento">Remover</button></div>');});
   $('acertoPagamentosLista')?.addEventListener('click',e=>{if(!e.target.classList.contains('remover-pagamento'))return;const linhas=$$('#acertoPagamentosLista .pagamento-linha');if(linhas.length===1){linhas[0].querySelector('.pagamento-valor').value='';pagamentosAcerto[0].valor=0;return;}e.target.closest('.pagamento-linha').remove();[...$$('#acertoPagamentosLista .pagamento-linha')].forEach((l,i)=>pagamentosAcerto[i]={forma:l.querySelector('.pagamento-forma').value,valor:Number(l.querySelector('.pagamento-valor').value)||0});});
@@ -1051,7 +1303,6 @@ function bind(){
   $('btnImprimirAcerto')?.addEventListener('click',imprimirAcerto);
   $('listaProdutosContainer')?.addEventListener('change',e=>{const index=e.target.dataset.editarQtdDraft;if(index===undefined)return;draftProdutos[Number(index)].quantidade=Math.max(1,Number(e.target.value)||1);renderListaProdutos();});
   $('acertoListaContainer')?.addEventListener('input',e=>{const index=e.target.dataset.devolucao;if(index===undefined)return;const item=acertoItens[Number(index)];item.devolvida=Math.min(item.retirada,Math.max(0,Number(e.target.value)||0));item.vendida=item.retirada-item.devolvida;item.valor=item.vendida*item.preco;renderAcerto();});
-  $('acertoQtdDevolvida')?.addEventListener('keydown', e => { if(e.key !== 'Enter') return; e.preventDefault(); const retirada=Number($('acertoQtdRetirada').value||0), devolvida=Number($('acertoQtdDevolvida').value||0), vendida=retirada-devolvida; const item=mostruarioAtual?.mostruario_itens?.find(i => i.produtos?.codigo === only($('acertoCodigoProduto').value).toUpperCase()); acertoItens.push({ codigo:only($('acertoCodigoProduto').value).toUpperCase(), descricao:$('acertoDescricaoProduto').value, retirada, devolvida, vendida, valor: vendida * Number(item?.produtos?.preco || 0) }); $('acertoCodigoProduto').value=''; $('acertoDescricaoProduto').value=''; $('acertoQtdRetirada').value=''; $('acertoQtdDevolvida').value=''; renderAcerto(); });
   document.addEventListener('click', async e => { const d=e.target.dataset||{}; try{ if(d.editarProduto) editarProduto(d.editarProduto); if(d.editarVendedora) editarVendedora(d.editarVendedora); if(d.removerProdutoDraft){ draftProdutos.splice(Number(d.removerProdutoDraft),1); renderListaProdutos(); } if(d.excluirProduto && confirm('Excluir produto?')){ await excluirProduto(d.excluirProduto); await carregarProdutos(); } if(d.excluirVendedora && confirm('Excluir vendedora?')){ await excluirVendedora(d.excluirVendedora); await carregarVendedoras(); } if(d.excluirMostruario && confirm('Excluir mostruário?')){ await excluirMostruario(d.excluirMostruario); await carregarMostruarios(); } if(d.alocarMostruario){ abrirModalAlocar(d.alocarMostruario); } if(d.desalocarMostruario){ await desalocarVendedora(d.desalocarMostruario); } if(d.imprimirMostruario){ const m = mostruarios.find(x => x.id === d.imprimirMostruario); if(m) { $('mostruarioId').value = m.id; $('numeroMostruario').value = m.numero; draftProdutos = (m.mostruario_itens || []).map(item => ({ produto_id: item.produto_id, codigo: item.produtos?.codigo || '', descricao: item.produtos?.descricao || '', preco: Number(item.produtos?.preco || 0), quantidade: Number(item.quantidade || 0) })); imprimirMostruario(); } } if(d.verMostruario){ editarMostruario(d.verMostruario); } }catch(err){ alert(`Erro: ${err.message}`); } });
   function camposEditaveisDaMesmaTela(input){
     const tela = input.closest('.screen') || document;
@@ -1115,3 +1366,4 @@ setStatus();
 bind();
 iniciarAutenticacao();
 showScreen(location.hash?.replace('#','') || 'home');
+carregarConfiguracaoMetais();
