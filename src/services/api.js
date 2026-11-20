@@ -109,10 +109,31 @@ export async function salvarAcerto(payload) {
   if (error) throw error;
   return data;
 }
-export async function listarAcertos() { ensure(); const { data, error } = await supabase.from('acertos').select('*, vendedoras(*)').is('excluido_em', null).order('created_at', { ascending: false }); if (error) throw error; return data || []; }
-export async function listarAcertosLixeira() { ensure(); const { data, error } = await supabase.from('acertos').select('*, vendedoras(*)').not('excluido_em', 'is', null).order('excluido_em', { ascending: false }); if (error) throw error; return data || []; }
+function colunaLixeiraAusente(error){ return error?.code === '42703' || /excluido_em.*does not exist/i.test(error?.message || ''); }
+export async function listarAcertos() {
+  ensure();
+  const consulta = await supabase.from('acertos').select('*, vendedoras(*)').is('excluido_em', null).order('created_at', { ascending: false });
+  if (!consulta.error) return consulta.data || [];
+  if (!colunaLixeiraAusente(consulta.error)) throw consulta.error;
+  const legado = await supabase.from('acertos').select('*, vendedoras(*)').order('created_at', { ascending: false });
+  if (legado.error) throw legado.error;
+  return legado.data || [];
+}
+export async function listarAcertosLixeira() {
+  ensure();
+  const { data, error } = await supabase.from('acertos').select('*, vendedoras(*)').not('excluido_em', 'is', null).order('excluido_em', { ascending: false });
+  if (colunaLixeiraAusente(error)) return [];
+  if (error) throw error;
+  return data || [];
+}
 export async function editarAcerto(id, payload) { ensure(); const { data, error } = await supabase.from('acertos').update(payload).eq('id', id).select().single(); if (error) throw error; return data; }
-export async function excluirAcerto(id) { ensure(); const { error } = await supabase.from('acertos').update({ excluido_em: new Date().toISOString() }).eq('id', id).is('excluido_em', null); if (error) throw error; }
+export async function excluirAcerto(id) {
+  ensure();
+  const { error } = await supabase.from('acertos').update({ excluido_em: new Date().toISOString() }).eq('id', id).is('excluido_em', null);
+  if (!colunaLixeiraAusente(error)) { if (error) throw error; return; }
+  const legado = await supabase.from('acertos').delete().eq('id', id);
+  if (legado.error) throw legado.error;
+}
 export async function restaurarAcerto(id) { ensure(); const { error } = await supabase.from('acertos').update({ excluido_em: null }).eq('id', id).not('excluido_em', 'is', null); if (error) throw error; }
 export async function excluirAcertoDefinitivamente(id) { ensure(); const { error } = await supabase.from('acertos').delete().eq('id', id).not('excluido_em', 'is', null); if (error) throw error; }
 
