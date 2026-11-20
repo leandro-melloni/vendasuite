@@ -178,6 +178,7 @@ function aplicarPerfil(){
   $('adminUsuarios').hidden = perfil !== 'administracao';
   document.querySelector('[data-target="configuracoes"]')?.classList.toggle('admin-only-hidden', perfil !== 'administracao');
   document.querySelector('[data-target="acerto"]')?.classList.toggle('admin-only-hidden', perfil !== 'administracao');
+  $('menuTenantsAdmin')?.classList.toggle('admin-only-hidden', !superadminAtual);
 }
 
 function aplicarIdentidadeTenant(){
@@ -203,7 +204,7 @@ function aplicarIdentidadeTenant(){
     imagem.alt = nome;
   });
   if($('tenantWatermark')) $('tenantWatermark').hidden = contextoPlataforma;
-  if($('tenantNavigation')) $('tenantNavigation').hidden = contextoPlataforma;
+  if($('tenantNavigation')) $('tenantNavigation').hidden = false;
   if($('tenantLogoLink')) {
     $('tenantLogoLink').dataset.target = contextoPlataforma ? 'portal-saas' : 'home';
     $('tenantLogoLink').title = contextoPlataforma ? 'Ir para o Portal Superadmin' : `Ir para o início da ${nome}`;
