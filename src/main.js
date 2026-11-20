@@ -4,11 +4,37 @@ import {
   listarMostruarios, listarMostruariosDisponiveis, listarMostruariosAlocados,
   salvarMostruario, excluirMostruario,
   buscarVendedoraPorCodigo, listarVendedoras, salvarVendedora, excluirVendedora,
-  listarProdutos, buscarProdutoPorCodigo, buscarProdutosPorPrefixo, salvarProduto, excluirProduto, carregarValoresMetais, salvarValoresMetais, recalcularPrecosProdutos, salvarAcerto, listarAcertos, editarAcerto, excluirAcerto
+  listarProdutos, buscarProdutoPorCodigo, buscarProdutosPorPrefixo, salvarProduto, listarAcertosLixeira, restaurarAcerto, excluirAcertoDefinitivamente, excluirProduto, carregarValoresMetais, salvarValoresMetais, recalcularPrecosProdutos, salvarAcerto, listarAcertos, editarAcerto, excluirAcerto
 } from './services/api.js';
 
 const $ = (id) => document.getElementById(id);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
+
+// Prevents a second save while the first one is still running.
+function aoClicarUmaVez(id, acao){
+  const botao = $(id);
+  botao?.addEventListener('click', async event => {
+    if(botao.dataset.ocupado === 'true') return;
+    botao.dataset.ocupado = 'true';
+    botao.disabled = true;
+    try { await acao(event); }
+    finally { botao.disabled = false; delete botao.dataset.ocupado; }
+  });
+}
+
+// Also protects delegated actions and dynamically created buttons.
+const ultimoClique = new WeakMap();
+document.addEventListener('click', event => {
+  const botao = event.target.closest?.('button, [role="button"]');
+  if(!botao) return;
+  const agora = Date.now();
+  if(agora - (ultimoClique.get(botao) || 0) < 600){
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return;
+  }
+  ultimoClique.set(botao, agora);
+}, true);
 
 let produtos = [];
 let vendedoras = [];
@@ -18,6 +44,7 @@ let acertoItens = [];
 let pagamentosAcerto = [{ forma: 'Pix', valor: 0 }];
 let acertoEmEdicao = null;
 let acertosHistorico = [];
+let acertosLixeira = [];
 let mostruarioAtual = null;
 let valoresMetais = { valor_ouro: 0, valor_prata: 0 };
 let paginaProdutos = 1;
@@ -428,7 +455,8 @@ async function carregarVendedoras(){
     const [listaVendedoras, listaMostruarios] = await Promise.all([listarVendedoras(), listarMostruarios()]);
     mostruarios = listaMostruarios || [];
     vendedoras = (listaVendedoras || []).map(v => ({ ...v, ...datasAcertoDaVendedora(v) }));
-    const rows = filtrar(vendedoras, $('buscaVendedora')?.value, [v=>v.codigo,v=>v.nome,v=>isoToBr(v.ultimo),v=>isoToBr(v.proximo)]);
+    const rows = filtrar(vendedoras, $('buscaVendedora')?.value, [v=>v.codigo,v=>v.nome,v=>isoToBr(v.ultimo),v=>isoToBr(v.proximo)])
+      .sort((a,b)=>(a.proximo||'9999-12-31').localeCompare(b.proximo||'9999-12-31') || (a.nome||'').localeCompare(b.nome||'', 'pt-BR', {sensitivity:'base'}));
     if(!rows.length){ tbody.innerHTML = msgConfig(5, 'Nenhuma vendedora cadastrada'); return; }
     tbody.innerHTML = rows.map(v => `<tr><td>${html(v.codigo)}</td><td>${html(v.nome)}</td><td>${html(isoToBr(v.ultimo) || '--')}</td><td>${html(isoToBr(v.proximo) || '--')}</td><td class="acoes-cell"><button class="mini-btn" data-editar-vendedora="${v.id}">Editar</button><button class="mini-btn danger" data-excluir-vendedora="${v.id}">Excluir</button></td></tr>`).join('');
   }catch(e){ tbody.innerHTML = msgConfig(5, 'Não foi possível conectar ao Supabase. Confira o .env e as policies.'); console.error(e); }
@@ -445,6 +473,7 @@ async function salvarFormVendedora(){
 
 async function carregarMostruarios(){
   const tbody = $('mostruarioTabelaBody'); if(!tbody) return;
+  tbody.closest('table')?.classList.toggle('mostruarios-alocados', abaAtivaMostruario === 'alocado');
   try{
     if(!supabaseConfigured){ tbody.innerHTML = msgConfig(7, 'Configure o Supabase para carregar os mostruários.'); return; }
 
@@ -469,7 +498,7 @@ async function carregarMostruarios(){
       m => m.vendedoras?.nome,
       m => isoToBr(m.data_envio),
       m => isoToBr(m.data_acerto)
-    ]);
+    ]).sort((a,b)=>(a.data_acerto||'9999-12-31').localeCompare(b.data_acerto||'9999-12-31') || (a.vendedoras?.nome||'').localeCompare(b.vendedoras?.nome||'', 'pt-BR', {sensitivity:'base'}));
 
     if(!rows.length){
       const msg = abaAtivaMostruario === 'disponivel'
@@ -544,8 +573,10 @@ function editarMostruario(id){
 async function salvarFormMostruario(){
   if(salvandoMostruario) return;
 
-  const numero = only($('numeroMostruario').value);
-  if(!numero) return alert('Informe o número do mostruário.');
+  const digitosNumero = only($('numeroMostruario').value).replace(/\D/g, '');
+  if(!digitosNumero) return alert('Informe o número do mostruário.');
+  const numero = digitosNumero.padStart(2, '0');
+  $('numeroMostruario').value = numero;
   if(draftProdutos.some(item => !quantidadeValida(item.quantidade))) {
     return alert('A quantidade de todos os produtos deve ser um número inteiro maior que zero.');
   }
@@ -819,6 +850,15 @@ function imprimirMostruario(){
 
 async function carregarAcertoBase(){ if(supabaseConfigured) { mostruarios = await listarMostruarios(); await carregarHistoricoAcertos(); } }
 async function carregarHistoricoAcertos(){if(!supabaseConfigured)return;try{acertosHistorico=await listarAcertos();const box=$('acertosHistoricoBody');if(!box)return;box.innerHTML=acertosHistorico.length?acertosHistorico.map(a=>`<tr><td>${isoToBr(a.data_acerto)||'--'}</td><td>${html(a.vendedoras?.codigo||'--')}</td><td>${html(a.vendedoras?.nome||'--')}</td><td>${money(a.valor_receber)}</td><td>${html(resumoPagamentos(a))}</td><td><button class="mini-btn" data-acerto-detalhes="${a.id}">Detalhes</button><button class="mini-btn" data-acerto-imprimir="${a.id}">Imprimir</button><button class="mini-btn" data-acerto-editar="${a.id}">Editar</button><button class="mini-btn danger" data-acerto-excluir="${a.id}">Excluir</button></td></tr>`).join(''):'<tr><td colspan="6" class="empty-table">Nenhum acerto realizado.</td></tr>';}catch(e){console.error(e);}}
+async function carregarLixeiraAcertos(){
+  if(!supabaseConfigured)return;
+  try{
+    acertosLixeira=await listarAcertosLixeira();
+    const box=$('acertosLixeiraBody');
+    if(!box)return;
+    box.innerHTML=acertosLixeira.length?acertosLixeira.map(a=>`<tr><td>${isoToBr(a.data_acerto)||'--'}</td><td>${html(a.vendedoras?.codigo||'--')}</td><td>${html(a.vendedoras?.nome||'--')}</td><td>${money(a.valor_receber)}</td><td>${html(resumoPagamentos(a))}</td><td><button class="mini-btn blue" data-acerto-restaurar="${a.id}">Restaurar</button><button class="mini-btn danger" data-acerto-excluir-definitivamente="${a.id}">Excluir</button></td></tr>`).join(''):'<tr><td colspan="6" class="empty-table">A lixeira está vazia.</td></tr>';
+  }catch(e){console.error(e);alert(`Erro ao carregar lixeira: ${e.message}`);}
+}
 function resumoPagamentos(a){const ps=a.pagamentos?.length?a.pagamentos:[{forma:a.forma_pagamento,valor:a.valor_receber}];return ps.filter(p=>Number(p.valor||0)>0).map(p=>`${html(p.forma)}: ${money(p.valor)}`).join('\n')||'--';}
 function pagamentosDoAcerto(a){return (a.pagamentos?.length?a.pagamentos:[{forma:a.forma_pagamento,valor:a.valor_receber}]).filter(p=>Number(p.valor||0)>0);}
 function pagamentosParaImpressao(pagamentos){return pagamentos.length?pagamentos.map(p=>`${html(p.forma||'--')}: ${money(p.valor)}`).join('<br>'):'--';}
@@ -866,7 +906,7 @@ function lerPagamentosAcerto(){const linhas=[...$$('#acertoPagamentosLista .paga
 function validarPagamentosAcerto(){const total=acertoItens.reduce((s,i)=>s+i.valor,0),pct=Number($('acertoComissao')?.value||0),receber=total*(1-pct/100),pago=lerPagamentosAcerto().reduce((s,p)=>s+p.valor,0);let aviso=$('acertoPagamentoAviso');if(!aviso){aviso=document.createElement('small');aviso.id='acertoPagamentoAviso';$('acertoPagamentosLista')?.after(aviso);}aviso.textContent=`Recebido: ${money(pago)} | A receber: ${money(receber)}`;aviso.style.color=Math.abs(pago-receber)<=0.01?'green':'#b00020';return Math.abs(pago-receber)<=0.01;}
 function limparListaMostruariosAcerto(){if($('acertoSelectMostruario'))$('acertoSelectMostruario').innerHTML='<option value="">Selecione</option>';}
 function limparAcerto(){['acertoCodigoVendedora','acertoNomeVendedora','acertoSelectMostruario'].forEach(id=>{if($(id))$(id).value='';});acertoEmEdicao=null;mostruarioAtual=null;acertoItens=[];pagamentosAcerto=[{forma:'Pix',valor:0}];const box=$('acertoPagamentosLista');if(box)box.innerHTML='<div class="pagamento-linha"><select class="field-select pagamento-forma"><option>Pix</option><option>Dinheiro</option></select><input class="pagamento-valor" type="number" min="0" step="0.01" placeholder="Valor"><button type="button" class="btn light remover-pagamento">Remover</button></div>';atualizarCampoDevolucaoRapida();renderAcerto();validarPagamentosAcerto();}
-async function salvarAcertoAtual(){try{if(!mostruarioAtual||!acertoItens.length)return alert('Selecione um mostruário com itens.');const pagamentos=lerPagamentosAcerto(),total=acertoItens.reduce((s,i)=>s+i.valor,0),pct=Number($('acertoComissao').value),receber=total*(1-pct/100),pago=pagamentos.reduce((s,p)=>s+p.valor,0);if(!pagamentos.length)return alert('Informe ao menos uma forma de pagamento e seu valor.');if(Math.abs(pago-receber)>0.01)return alert(`A soma dos pagamentos (${money(pago)}) deve ser igual ao valor a receber (${money(receber)}).`);const dados={itens:acertoItens,total_pecas:acertoItens.reduce((s,i)=>s+i.vendida,0),valor_total:total,comissao_percentual:pct,valor_comissao:total*pct/100,valor_receber:receber,forma_pagamento:pagamentos[0].forma,pagamentos};if(acertoEmEdicao){await editarAcerto(acertoEmEdicao.id,dados);acertoEmEdicao=null;mostruarioAtual=null;acertoItens=[];await carregarHistoricoAcertos();alert('Acerto atualizado com sucesso.');return;}await salvarAcerto({...dados,mostruario_id:mostruarioAtual.id,vendedora_id:mostruarioAtual.vendedora_id,data_acerto:new Date().toISOString().slice(0,10)});await excluirMostruario(mostruarioAtual.id);mostruarios=mostruarios.filter(m=>m.id!==mostruarioAtual.id);mostruarioAtual=null;acertoItens=[];await carregarMostruarios();alert('Acerto salvo e mostruário removido com sucesso.');}catch(e){alert(`Erro ao salvar acerto: ${e.message}`)}}
+async function salvarAcertoAtual(){try{if(!mostruarioAtual||!acertoItens.length)return alert('Selecione um mostruário com itens.');const pagamentos=lerPagamentosAcerto(),total=acertoItens.reduce((s,i)=>s+i.valor,0),pct=Number($('acertoComissao').value),receber=total*(1-pct/100),pago=pagamentos.reduce((s,p)=>s+p.valor,0);if(!pagamentos.length)return alert('Informe ao menos uma forma de pagamento e seu valor.');if(Math.abs(pago-receber)>0.01)return alert(`A soma dos pagamentos (${money(pago)}) deve ser igual ao valor a receber (${money(receber)}).`);const dados={itens:acertoItens,total_pecas:acertoItens.reduce((s,i)=>s+i.vendida,0),valor_total:total,comissao_percentual:pct,valor_comissao:total*pct/100,valor_receber:receber,forma_pagamento:pagamentos[0].forma,pagamentos};if(acertoEmEdicao){await editarAcerto(acertoEmEdicao.id,dados);acertoEmEdicao=null;mostruarioAtual=null;acertoItens=[];await carregarHistoricoAcertos();alert('Acerto atualizado com sucesso.');return;}await salvarAcerto({...dados,mostruario_id:mostruarioAtual.id,vendedora_id:mostruarioAtual.vendedora_id,data_acerto:new Date().toISOString().slice(0,10)});await excluirMostruario(mostruarioAtual.id);mostruarios=mostruarios.filter(m=>m.id!==mostruarioAtual.id);mostruarioAtual=null;acertoItens=[];await carregarMostruarios();alert('Acerto salvo com sucesso.');}catch(e){alert(`Erro ao salvar acerto: ${e.message}`)}}
 function imprimirAcerto(){
   if(!mostruarioAtual) return alert('Selecione um mostruário.');
   const total = acertoItens.reduce((s, i) => s + Number(i.valor || 0), 0);
@@ -979,6 +1019,17 @@ function bind(){
   document.addEventListener('click',e=>{const d=e.target.dataset||{},a=acertosHistorico.find(x=>x.id===d.acertoDetalhes||x.id===d.acertoEditar);if(!a)return;if(d.acertoDetalhes){e.stopImmediatePropagation();modoConsultaAcerto(a);if($('btnAdicionarPagamento'))$('btnAdicionarPagamento').style.display='none';}if(d.acertoEditar){e.stopImmediatePropagation();modoEdicaoAcerto(a);if($('btnAdicionarPagamento'))$('btnAdicionarPagamento').style.display='';$$('#acertoPagamentosLista .pagamento-linha').forEach(l=>{if(!l.querySelector('.remover-pagamento')){const b=document.createElement('button');b.type='button';b.className='btn light remover-pagamento';b.textContent='Remover';l.append(b);}});}},true);
   const acoesAcerto=$('btnSalvarAcerto')?.parentElement;if(acoesAcerto){const salvar=$('btnSalvarAcerto'),imprimir=$('btnImprimirAcerto');if(salvar&&imprimir){acoesAcerto.style.gap='28px';acoesAcerto.insertBefore(imprimir,salvar);}}
   const acertoPanel=$('acerto');if(acertoPanel&&!$('acertosHistoricoBody')){const wrap=acertoPanel.querySelector('.include-wrap'),sec=document.createElement('div');sec.id='acertosHistorico';sec.className='table-wrap';sec.innerHTML='<div class="toolbar-actions toolbar-actions-main"><h2>Acertos realizados</h2><button type="button" class="btn blue" id="btnNovoAcerto">NOVO ACERTO</button></div><div class="toolbar-actions"><label>De: <input type="date" id="relatorioAcertoInicio"></label><label>Até: <input type="date" id="relatorioAcertoFim"></label><button type="button" class="btn light" id="btnGerarRelatorioAcertos">GERAR RELATÓRIO</button></div><table class="data-table"><thead><tr><th>Data</th><th>Código</th><th>Vendedora</th><th>Valor a receber</th><th>Pagamento</th><th>Ações</th></tr></thead><tbody id="acertosHistoricoBody"><tr><td colspan="6">Carregando...</td></tr></tbody></table>';wrap?.append(sec);const formParts=wrap?.children||[];[...formParts].filter(x=>x!==sec).forEach(x=>x.dataset.acertoForm='true');}
+  const historicoAcertos=$('acertosHistorico');
+  if(historicoAcertos&&!$('acertosLixeira')){
+    const botao=document.createElement('button');botao.type='button';botao.className='btn light';botao.id='btnLixeiraAcertos';botao.textContent='Lixeira';
+    historicoAcertos.querySelector('.toolbar-actions-main')?.append(botao);
+    const lixeira=document.createElement('section');lixeira.id='acertosLixeira';lixeira.style.display='none';
+    lixeira.innerHTML='<div class="toolbar-actions"><h2>Lixeira de acertos</h2><button type="button" class="btn light" id="btnVoltarLixeiraAcertos">Voltar aos acertos</button></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Data</th><th>Código</th><th>Vendedora</th><th>Valor a receber</th><th>Pagamento</th><th>Ações</th></tr></thead><tbody id="acertosLixeiraBody"><tr><td colspan="6">Carregando...</td></tr></tbody></table></div>';
+    const avisoRetencao=document.createElement('p');avisoRetencao.textContent='Acertos na lixeira são removidos permanentemente após 30 dias.';lixeira.querySelector('.toolbar-actions')?.after(avisoRetencao);
+    historicoAcertos.after(lixeira);
+    botao.addEventListener('click',async()=>{historicoAcertos.style.display='none';lixeira.style.display='';await carregarLixeiraAcertos();});
+    $('btnVoltarLixeiraAcertos').addEventListener('click',async()=>{lixeira.style.display='none';historicoAcertos.style.display='';await carregarHistoricoAcertos();});
+  }
   $('btnGerarRelatorioAcertos')?.addEventListener('click',gerarRelatorioAcertosComColunas);const relBtn2=$('btnGerarRelatorioAcertos'),relOldToolbar=relBtn2?.parentElement,relMainToolbar=$('btnNovoAcerto')?.parentElement;if(relBtn2&&relMainToolbar){relMainToolbar.style.gap='28px';relMainToolbar.append(relBtn2);if(relOldToolbar&&relOldToolbar!==relMainToolbar)relOldToolbar.remove();}relBtn2?.addEventListener('click',e=>{e.stopImmediatePropagation();const old=$('relatorioAcertoModal');if(old)old.remove();const m=document.createElement('div');m.id='relatorioAcertoModal';m.innerHTML='<div class="modal-backdrop"><div class="modal"><h3>Gerar relatório de pagamentos</h3><label>Data inicial <input type="date" id="relatorioAcertoInicio"></label><label>Data final <input type="date" id="relatorioAcertoFim"></label><div class="modal-footer"><button type="button" id="cancelarRelatorio" class="btn light">Cancelar</button><button type="button" id="confirmarRelatorio" class="btn blue">Gerar</button></div></div></div>';document.body.append(m);$('cancelarRelatorio').onclick=()=>m.remove();$('confirmarRelatorio').onclick=()=>{gerarRelatorioAcertosComColunas();m.remove();};},true);
   $('btnNovoAcerto')?.addEventListener('click',()=>{[...$$('[data-acerto-form="true"]')].forEach(x=>x.style.display='');$('acertosHistorico').style.display='none';if($('btnSalvarAcerto'))$('btnSalvarAcerto').style.display='';if($('btnAdicionarPagamento'))$('btnAdicionarPagamento').style.display='';limparAcerto();});
   [...$$('[data-acerto-form="true"]')].forEach(x=>x.style.display='none');
@@ -1005,8 +1056,8 @@ function bind(){
       carregarMostruarios();
     });
   });
-  $('btnSalvarProduto')?.addEventListener('click', salvarFormProduto);
-  $('btnSalvarValoresMetais')?.addEventListener('click', async () => {
+  aoClicarUmaVez('btnSalvarProduto', salvarFormProduto);
+  aoClicarUmaVez('btnSalvarValoresMetais', async () => {
     try {
       const valorOuro=n($('valorOuro').value), valorPrata=n($('valorPrata').value);
       valoresMetais = await salvarValoresMetais(valorOuro, valorPrata);
@@ -1021,7 +1072,7 @@ function bind(){
     limitarQuoficiente(event.currentTarget);
     atualizarPrecoCalculado();
   });
-  $('btnSalvarVendedora')?.addEventListener('click', salvarFormVendedora);
+  aoClicarUmaVez('btnSalvarVendedora', salvarFormVendedora);
 
   // --- Máscara CPF ---
   $('vendedoraCpf')?.addEventListener('input', () => {
@@ -1050,7 +1101,7 @@ function bind(){
       buscarCep($('vendedoraCep').value);
     }
   });
-  $('btnSalvarMostruario')?.addEventListener('click', salvarFormMostruario);
+  aoClicarUmaVez('btnSalvarMostruario', salvarFormMostruario);
   $('btnPesquisarProduto')?.addEventListener('click', () => { paginaProdutos = 1; renderizarProdutos(); });
   $('buscaProduto')?.addEventListener('input', () => { paginaProdutos = 1; renderizarProdutos(); });
   $('filtroProduto')?.addEventListener('change', () => { paginaProdutos = 1; renderizarProdutos(); });
@@ -1067,11 +1118,18 @@ function bind(){
   });
   $('btnFecharModalAlocar')?.addEventListener('click', fecharModalAlocar);
   $('btnCancelarModalAlocar')?.addEventListener('click', fecharModalAlocar);
-  $('btnConfirmarModalAlocar')?.addEventListener('click', confirmarAlocacaoModal);
+  aoClicarUmaVez('btnConfirmarModalAlocar', confirmarAlocacaoModal);
 
   // --- Autocomplete por Prefixo do Produto (Mostruário) ---
   const inputCodigo = $('codigoProduto');
   const dropdown = $('dropdownSugestoesProduto');
+  const inputNumeroMostruario = $('numeroMostruario');
+  inputNumeroMostruario?.addEventListener('input', () => {
+    inputNumeroMostruario.value = inputNumeroMostruario.value.replace(/\D/g, '');
+  });
+  inputNumeroMostruario?.addEventListener('blur', () => {
+    if(inputNumeroMostruario.value) inputNumeroMostruario.value = inputNumeroMostruario.value.padStart(2, '0');
+  });
   let ultimoCodigoDuplicadoAvisado = '';
 
   function produtoJaIncluido(produtoOuCodigo) {
@@ -1271,7 +1329,7 @@ function bind(){
       return inputCodigo?.focus();
     }
     draftProdutos.push({ produto_id:p.id, codigo:p.codigo, descricao:p.descricao, preco:Number(p.preco||0), quantidade });
-    $('codigoProduto').value = '';
+    $('codigoProduto').value = codigo.match(/^[A-Z]+/)?.[0] || '';
     $('descricaoProduto').value = '';
     $('precoProdutoMostruario').value = '';
     $('qtdProduto').value = '';
@@ -1296,8 +1354,21 @@ function bind(){
   $('acertoPagamentosLista')?.addEventListener('click',e=>{if(!e.target.classList.contains('remover-pagamento'))return;const linhas=$$('#acertoPagamentosLista .pagamento-linha');if(linhas.length===1){linhas[0].querySelector('.pagamento-valor').value='';pagamentosAcerto[0].valor=0;return;}e.target.closest('.pagamento-linha').remove();[...$$('#acertoPagamentosLista .pagamento-linha')].forEach((l,i)=>pagamentosAcerto[i]={forma:l.querySelector('.pagamento-forma').value,valor:Number(l.querySelector('.pagamento-valor').value)||0});});
   $('acertoPagamentosLista')?.addEventListener('input',()=>{[...$$('#acertoPagamentosLista .pagamento-linha')].forEach((l,i)=>pagamentosAcerto[i]={forma:l.querySelector('.pagamento-forma').value,valor:Number(l.querySelector('.pagamento-valor').value)||0});validarPagamentosAcerto();});
   $('acertoComissao')?.addEventListener('input',validarPagamentosAcerto);
-  $('btnSalvarAcerto')?.addEventListener('click',salvarAcertoAtual);
-  document.addEventListener('click',async e=>{const d=e.target.dataset||{},a=acertosHistorico.find(x=>x.id===d.acertoDetalhes||x.id===d.acertoImprimir||x.id===d.acertoEditar||x.id===d.acertoExcluir);try{if(!a)return;if(d.acertoDetalhes)alert(`Data: ${isoToBr(a.data_acerto)}\nVendedora: ${a.vendedoras?.nome||'--'}\nPeças: ${a.total_pecas}\nValor total: ${money(a.valor_total)}\nComissão: ${money(a.valor_comissao)}\nA receber: ${money(a.valor_receber)}\nPagamentos: ${JSON.stringify(a.pagamentos||[])}`);if(d.acertoImprimir)imprimirAcertoHistorico(a);if(d.acertoExcluir&&confirm('Excluir este acerto?')){await excluirAcerto(a.id);await carregarHistoricoAcertos();}if(d.acertoEditar){const valor=prompt('Novo valor a receber:',a.valor_receber);if(valor===null)return;const novo=Number(String(valor).replace(',','.'));if(!Number.isFinite(novo)||novo<0)return alert('Valor inválido.');await editarAcerto(a.id,{valor_receber:novo});await carregarHistoricoAcertos();}}catch(err){alert(`Erro: ${err.message}`);}});
+  aoClicarUmaVez('btnSalvarAcerto', salvarAcertoAtual);
+  document.addEventListener('click',async e=>{
+    const d=e.target.dataset||{};
+    const a=acertosLixeira.find(x=>x.id===d.acertoRestaurar||x.id===d.acertoExcluirDefinitivamente);
+    if(!a)return;
+    try{
+      if(d.acertoRestaurar){await restaurarAcerto(a.id);await Promise.all([carregarLixeiraAcertos(),carregarHistoricoAcertos()]);}
+      if(d.acertoExcluirDefinitivamente){
+        if(!confirm(`Excluir definitivamente o acerto de ${isoToBr(a.data_acerto)||'data não informada'} da revendedora ${a.vendedoras?.nome||'não informada'}? Esta ação não pode ser desfeita.`))return;
+        await excluirAcertoDefinitivamente(a.id);
+        await carregarLixeiraAcertos();
+      }
+    }catch(err){alert(`Erro: ${err.message}`);}
+  });
+  document.addEventListener('click',async e=>{const d=e.target.dataset||{},a=acertosHistorico.find(x=>x.id===d.acertoDetalhes||x.id===d.acertoImprimir||x.id===d.acertoEditar||x.id===d.acertoExcluir);try{if(!a)return;if(d.acertoDetalhes)alert(`Data: ${isoToBr(a.data_acerto)}\nVendedora: ${a.vendedoras?.nome||'--'}\nPeças: ${a.total_pecas}\nValor total: ${money(a.valor_total)}\nComissão: ${money(a.valor_comissao)}\nA receber: ${money(a.valor_receber)}\nPagamentos: ${JSON.stringify(a.pagamentos||[])}`);if(d.acertoImprimir)imprimirAcertoHistorico(a);if(d.acertoExcluir){const confirmado=confirm(`Deseja realmente excluir o acerto de ${isoToBr(a.data_acerto)||'data não informada'} da vendedora ${a.vendedoras?.nome||'não informada'}?`);if(!confirmado)return;await excluirAcerto(a.id);await carregarHistoricoAcertos();}if(d.acertoEditar){const valor=prompt('Novo valor a receber:',a.valor_receber);if(valor===null)return;const novo=Number(String(valor).replace(',','.'));if(!Number.isFinite(novo)||novo<0)return alert('Valor inválido.');await editarAcerto(a.id,{valor_receber:novo});await carregarHistoricoAcertos();}}catch(err){alert(`Erro: ${err.message}`);}});
   $('btnSalvarAcerto')?.addEventListener('click',()=>{const timer=setInterval(()=>{if(!mostruarioAtual){limparListaMostruariosAcerto();[...$$('[data-acerto-form="true"]')].forEach(x=>x.style.display='none');if($('acertosHistorico'))$('acertosHistorico').style.display='';carregarHistoricoAcertos();clearInterval(timer);}},250);setTimeout(()=>clearInterval(timer),10000);});
   $('btnSalvarAcerto')?.addEventListener('click',()=>{const vendedorId=mostruarioAtual?.vendedora_id,today=new Date().toISOString().slice(0,10);const timer=setInterval(async()=>{if(!mostruarioAtual){clearInterval(timer);if(vendedorId)try{const v=vendedoras.find(x=>x.id===vendedorId)||{};await salvarVendedora({id:vendedorId,codigo:v.codigo,nome:v.nome,cpf:v.cpf,cep:v.cep,endereco:v.endereco,numero:v.numero,complemento:v.complemento,bairro:v.bairro,celular:v.celular,ultimo:today,proximo:''});}catch(e){console.error(e);}limparAcerto();await carregarMostruarios();await carregarVendedoras();}},250);setTimeout(()=>clearInterval(timer),10000);});
   $('btnImprimirAcerto')?.addEventListener('click',imprimirAcerto);

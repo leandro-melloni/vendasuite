@@ -78,7 +78,7 @@
         <div class="mostruario-page"><div class="top-bar top-bar-mostruario">MOSTRUÁRIO</div><div class="include-wrap"><div class="include-top"><div class="voltar nav-btn" data-target="mostruario">⟵ VOLTAR</div><div class="top-actions"><button class="btn primary" type="button" id="btnSalvarMostruario">Salvar</button></div></div>
           <input type="hidden" id="mostruarioId">
           <div class="include-grid include-grid-mostruario">
-            <div class="field small"><label>Número Mostruário:</label><input type="text" id="numeroMostruario" placeholder="00" data-auto-next="true" data-next-length="2"></div>
+            <div class="field small"><label for="numeroMostruario">Número Mostruário:</label><input type="text" id="numeroMostruario" placeholder="00" inputmode="numeric" pattern="[0-9]+" autocomplete="off" data-auto-next="true" data-next-length="2"></div>
             <div class="field small field-autocomplete">
               <label>Cód. do Produto:</label>
               <input type="text" id="codigoProduto" placeholder="BR033" maxlength="10" autocomplete="off" data-uppercase="true">
