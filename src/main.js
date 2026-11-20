@@ -281,7 +281,7 @@ async function iniciarAutenticacao(){
 function filtrar(rows, termo, campos){ const t = only(termo).toLowerCase(); if(!t) return rows; return rows.filter(r => campos.some(c => only(c(r)).toLowerCase().includes(t))); }
 
 async function carregarConfiguracaoMetais(){
-  if(!supabaseConfigured) return;
+  if(!supabaseConfigured || !sessaoAtual) return;
   try{
     valoresMetais = await carregarValoresMetais();
     if($('valorOuro')) $('valorOuro').value = Number(valoresMetais.valor_ouro || 0).toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 });
@@ -1445,4 +1445,3 @@ setStatus();
 bind();
 iniciarAutenticacao();
 showScreen(location.hash?.replace('#','') || 'home');
-carregarConfiguracaoMetais();
