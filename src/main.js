@@ -457,7 +457,14 @@ async function carregarVendedoras(){
     mostruarios = listaMostruarios || [];
     vendedoras = (listaVendedoras || []).map(v => ({ ...v, ...datasAcertoDaVendedora(v) }));
     const rows = filtrar(vendedoras, $('buscaVendedora')?.value, [v=>v.codigo,v=>v.nome,v=>isoToBr(v.ultimo),v=>isoToBr(v.proximo)])
-      .sort((a,b)=>(a.proximo||'9999-12-31').localeCompare(b.proximo||'9999-12-31') || (a.nome||'').localeCompare(b.nome||'', 'pt-BR', {sensitivity:'base'}));
+      .sort((a,b)=>{
+        const codigoA = String(a.codigo || '').trim();
+        const codigoB = String(b.codigo || '').trim();
+        const numeroA = Number(codigoA.replace(/\D/g, ''));
+        const numeroB = Number(codigoB.replace(/\D/g, ''));
+        const comparacaoNumerica = (Number.isFinite(numeroA) ? numeroA : Infinity) - (Number.isFinite(numeroB) ? numeroB : Infinity);
+        return comparacaoNumerica || codigoA.localeCompare(codigoB, 'pt-BR', {numeric:true, sensitivity:'base'}) || (a.nome||'').localeCompare(b.nome||'', 'pt-BR', {sensitivity:'base'});
+      });
     if(!rows.length){ tbody.innerHTML = msgConfig(5, 'Nenhuma vendedora cadastrada'); return; }
     tbody.innerHTML = rows.map(v => `<tr><td>${html(v.codigo)}</td><td>${html(v.nome)}</td><td>${html(isoToBr(v.ultimo) || '--')}</td><td>${html(isoToBr(v.proximo) || '--')}</td><td class="acoes-cell"><button class="mini-btn" data-editar-vendedora="${v.id}">Editar</button><button class="mini-btn danger" data-excluir-vendedora="${v.id}">Excluir</button></td></tr>`).join('');
   }catch(e){ tbody.innerHTML = msgConfig(5, 'Não foi possível conectar ao Supabase. Confira o .env e as policies.'); console.error(e); }
